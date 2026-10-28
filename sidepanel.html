@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div class="header">
+    <h3>Accountability Machine</h3>
+    <div class="header-right">
+      <button id="pullBtn" title="Pull my current LeetCode attempt (code + failed tests) into the buddy's context">📥</button>
+      <button id="syncBtn" title="Sync LeetCode stats now">🔄</button>
+      <div class="streak-badge" id="streakBadge" title="Current streak">🔥 0</div>
+    </div>
+  </div>
+
+  <details class="settings">
+    <summary>⚙️ Settings</summary>
+    <label>OpenRouter API key</label>
+    <input type="password" id="apiKey" placeholder="sk-or-v1-...">
+    <label>Model</label>
+    <input type="text" id="model" placeholder="z-ai/glm-5.2">
+    <label>LeetCode username</label>
+    <input type="text" id="lcUsername" placeholder="adonno55">
+    <label>Personality</label>
+    <select id="personality">
+      <option value="coach">Coach — supportive, output-focused</option>
+      <option value="drill">Drill — blunt recruiter, zero fluff</option>
+    </select>
+    <label class="checkbox-row">
+      <input type="checkbox" id="nudgeEnabled"> Daily deadline nudge
+    </label>
+    <label>Nudge hour (24h, fires if day unmet)</label>
+    <input type="number" id="nudgeHour" min="0" max="23" placeholder="21">
+  </details>
+
+  <details class="settings">
+    <summary>🧠 Memory (AI-managed)</summary>
+    <pre id="memoryView"></pre>
+    <button id="clearMemoryBtn" class="danger">Reset memory</button>
+  </details>
+
+  <details class="settings" id="logsSection">
+    <summary>📜 Logs</summary>
+    <div class="log-actions">
+      <button id="refreshLogsBtn">Refresh</button>
+      <button id="copyLogsBtn">Copy JSON</button>
+      <button id="clearLogsBtn" class="danger">Clear</button>
+    </div>
+    <pre id="logView"></pre>
+  </details>
+
+  <div class="plan-banner" id="planBanner"></div>
+  <div class="interview-banner" id="interviewBanner"></div>
+
+  <div class="goal-box">
+    <input type="text" id="dailyGoal" placeholder="Today's target, e.g. 2 DSA camp modules">
+    <button id="doneBtn" title="Mark today done">✅</button>
+  </div>
+
+  <div class="streak-grid" id="streakGrid"></div>
+
+  <div id="chatWindow" class="chat-window"></div>
+
+  <div class="input-area">
+    <button id="interviewBtn" title="Start / end a mock interview">🎤</button>
+    <textarea id="userInput" rows="1" placeholder="Talk to your buddy... (Shift+Enter for newline)"></textarea>
+    <button id="sendBtn">Send</button>
+  </div>
+
+  <script src="vendor/marked.min.js"></script>
+  <script src="vendor/purify.min.js"></script>
+  <script src="log.js"></script>
+  <script src="shared.js"></script>
+  <script src="sidepanel.js"></script>
+</body>
+</html>
