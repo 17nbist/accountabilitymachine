@@ -18,6 +18,9 @@ let lastSyncedProfile = null;
 let lastAcceptedKey = null;
 let lastIgnoredKey = null;
 let armedUntil = 0; // epoch ms; nonzero after the user actually clicks Submit
+// When each problem was first opened in this tab, for solve timing. Refreshed once the
+// old stamp is past the cap so a re-solve days later in the same tab times from scratch.
+const firstSeen = {};
 
 // Who is actually signed in — the visited profile's URL can be anyone's, and adopting
 // a stranger's stats/username on first visit poisoned the whole state.
@@ -137,9 +140,16 @@ async function recordSolve(slug, title) {
     return;
   }
 
-  solves.push({ slug, title, ts: Date.now() });
+  const now = Date.now();
+  const entry = { slug, title, ts: now };
+  const secs = amSolveSecs(firstSeen[slug], now);
+  if (secs !== null) entry.secs = secs;
+  const diffEl = document.querySelector('[class*="text-difficulty-"]');
+  const difficulty = diffEl ? diffEl.textContent.trim() : null;
+  if (difficulty) entry.difficulty = difficulty;
+  solves.push(entry);
   await chrome.storage.local.set({ lcSolves: solves.slice(-MAX_LOGGED_SOLVES) });
-  amLog("accepted", "recorded", { slug, title, totalLogged: solves.length });
+  amLog("accepted", "recorded", { slug, title, secs, difficulty, totalLogged: solves.length });
   storeHarvest(); // capture the accepted solution + result for the buddy
 }
 
@@ -353,6 +363,11 @@ function checkForAccepted() {
 
 function onPathChange(path) {
   amLog("nav", "path-change", { path });
+  const prob = path.match(PROBLEM_RE);
+  if (prob && (!firstSeen[prob[1]] || Date.now() - firstSeen[prob[1]] > AM_SOLVE_CAP_MS)) {
+    firstSeen[prob[1]] = Date.now();
+    amLog("timing", "first-seen", { slug: prob[1] });
+  }
   const prof = path.match(PROFILE_RE);
   if (prof) {
     const username = decodeURIComponent(prof[1]);

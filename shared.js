@@ -39,3 +39,6 @@ function amGoalTarget(goalText) {
   const n = parseInt(m[1], 10);
   return n >= 1 && n <= 30 ? n : null;
 }
+
+// Node test hook — a no-op in extension contexts, where `module` is undefined.
+if (typeof module !== "undefined") module.exports = { amTodayKey, amStreakFrom, amGoalTarget };

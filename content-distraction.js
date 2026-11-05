@@ -65,6 +65,8 @@ function buildOverlay(info) {
       }
       .go { background: #4c6ef5; color: #fff; }
       .go:hover { background: #5c7cff; }
+      .go.zetamac { background: #2fbf71; color: #0f1117; }
+      .go.zetamac:hover { background: #45dd8b; }
       .snooze { background: #1c2030; color: #8b93a7; border: 1px solid #2b3145; }
       .snooze:hover { background: #262b3d; }
       .host { font-size: 12px; color: #5a627a; margin-top: 18px; }
@@ -78,6 +80,7 @@ function buildOverlay(info) {
         ${dueLine}
         <div class="actions">
           <button class="go">Take me to LeetCode</button>
+          <button class="go zetamac">Take me to Zetamac</button>
           <button class="snooze">1 hour of weakness</button>
         </div>
         <div class="host">Accountability Machine · dismiss cools down for 1h on this site</div>
@@ -85,9 +88,13 @@ function buildOverlay(info) {
     </div>
   `;
 
-  shadow.querySelector(".go").addEventListener("click", () => {
+  shadow.querySelector(".go:not(.zetamac)").addEventListener("click", () => {
     amLog("distraction", "go-to-leetcode", { host });
     window.location.href = "https://leetcode.com/problemset/";
+  });
+  shadow.querySelector(".go.zetamac").addEventListener("click", () => {
+    amLog("distraction", "go-to-zetamac", { host });
+    window.location.href = "https://arithmetic.zetamac.com/";
   });
   shadow.querySelector(".snooze").addEventListener("click", async () => {
     const { amDistractionCooldown } = await chrome.storage.local.get("amDistractionCooldown");

@@ -1,12 +1,14 @@
 // Edit this to keep the buddy's baseline picture current. Live stats, detected solves,
 // plan, and facts are layered on top of it automatically.
-const PROFILE = `The user is Naman (LeetCode username: adonno55): final-year CS & AI student at
-Loughborough (graduating June 2027), working at Fleet AI, a fast-scaling AI startup. Strong maths
+const PROFILE = `The user is Naman (LeetCode username: adonno55): Year 3 of a 4-year MSci CS & AI at
+Loughborough, leaving after Year 3 to do an MSc (UCL/Imperial, 2027-28). Incoming Barclays Pre-Trade
+Markets Technology intern, summer 2027. Works at Fleet AI, a fast-scaling AI startup. Strong maths
 background (A* Further Maths) and good architectural understanding — but his production work and
 projects were heavily AI-assisted, so unassisted, from-scratch coding fluency is the weakness,
 and it is exactly what online assessments and whiteboards test.
-Goal: a top-tier new-grad software engineering offer for 2027. Applications and OAs open around
-September 2026.
+Targets: 2028 new-grad offers at high-pay tech (Databricks/Stripe tier) and quant developer roles at
+mid/upper-mid trading firms (Optiver, IMC, G-Research, Maven, Qube); quant trader OAs as a bonus.
+The application window opens July 2027, so every dated checkpoint in the plan matters.
 Non-negotiable rules to hold him to, every session:
 1. Zero AI assistance while solving — no Copilot, no chat, no autocomplete. Your hints are
    Socratic only: name the pattern, ask a guiding question, or give a small counterexample /
@@ -19,10 +21,13 @@ Non-negotiable rules to hold him to, every session:
 2. After each solve, he explains the approach and its time/space complexity back to you.
 3. Missed or struggled problems get re-solved from scratch when they appear in the re-solve queue.`;
 
-const DEFAULT_PLAN = `Phase 1 (current): LeetCode's official DSA crash course — finish every module honestly.
-Phase 2 (next): NeetCode 150 in Python, ~15 problems/week, clearing the re-solve queue before new problems.
-Phase 2 rule: one timed mock interview per week from week 3 onward.
-Hard deadline: OA-ready by mid-September 2026, when new-grad applications open.`;
+const DEFAULT_PLAN = `Now → Feb 2027: NeetCode 150 in Python, Zetamac daily, Green Book ch. 1-3.
+  Checkpoint 28 Feb 2027: ~100 solved, typical Medium in ~20 min.
+Feb → Apr 2027: some Hards, C++ fundamentals, order book project.
+  Checkpoint 30 Apr 2027: order book with benchmarks on GitHub.
+May → Jun 2027: weekly mocks, timed OAs. Checkpoint 30 Jun 2027: Zetamac 50+, 5+ referral contacts.
+Jul → Sep 2027 (during Barclays): maintenance mode, 1 h weekdays + weekend blocks; apply in week one of each opening.
+Standing rules: re-solve queue before new problems; one mock per week from May; no AI while solving.`;
 
 const PERSONALITIES = {
   coach: `You are a supportive but strictly output-oriented accountability coach.
@@ -31,19 +36,6 @@ Encourage, but always steer back to today's target. Celebrate completed problems
 for weak DSA performance. No pep talks, no generic advice. Hold the user to their number.
 If they're making excuses, say so.`,
 };
-
-const INTERVIEWER_PROMPT = `You are now running a MOCK TECHNICAL INTERVIEW — drop the coach persona.
-You are a senior engineer at a top tech company conducting a timed DSA screen. Rules:
-- If no problem is chosen yet, pick ONE (prefer the top item in the re-solve queue; else call
-  pick_problem with difficulty/tags fitting the user's current plan phase) and state it clearly
-  with constraints. Offer open_problem so they can code it. Then STOP and make them talk.
-- Force the interview loop: (1) they restate the problem and clarify, (2) they explain their
-  APPROACH and its time/space complexity BEFORE writing any code, (3) only then do they code it on
-  LeetCode. Do not let them skip to code. Probe edge cases and complexity like a real interviewer.
-- Give NO solutions and NO code. Nudge with questions only. Stay terse and professional.
-- When the user ends the interview, output a short verdict: what went well, what was weak, and a
-  score out of 10 for problem-solving, communication, and code — then call remember to store the
-  score under a key like interview_YYYYMMDD.`;
 
 const TOOLS = [
   {
@@ -137,11 +129,32 @@ const TOOLS = [
       parameters: { type: "object", properties: {} },
     },
   },
+  {
+    type: "function",
+    function: {
+      name: "log_practice",
+      description: "Log a self-reported practice session on a non-LeetCode track the moment the user mentions it (\"did 4 Green Book problems\", \"45 min of C++\", \"an hour on the order book\", \"did a mock with a friend\"). Tracks: probability (problems), cpp (minutes), project (minutes), mock (count). LeetCode solves and Zetamac scores are auto-captured — never log those by hand. Don't ask permission.",
+      parameters: {
+        type: "object",
+        properties: {
+          track: { type: "string", enum: ["probability", "cpp", "project", "mock"] },
+          amount: { type: "number", description: "problems / minutes / count, per the track's unit" },
+          note: { type: "string", description: "optional, e.g. 'Green Book ch.2' or 'move semantics'" },
+        },
+        required: ["track", "amount"],
+      },
+    },
+  },
 ];
 
 const OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions";
 const LC_GRAPHQL_URL = "https://leetcode.com/graphql";
-const DEFAULT_MODEL = "z-ai/glm-5.2";
+// Picked Nov 2026 from OpenRouter's live prices + the Artificial Analysis index: above GLM-5.3
+// on the index at roughly a tenth of GLM-5.2's routed price. Existing installs are migrated
+// once, only if they still have the old default (see v3 migration in init).
+const DEFAULT_MODEL = "anthropic/claude-haiku-5.5";
+const V2_DEFAULT_MODEL = "z-ai/glm-5.2";
+const MAX_PRACTICE_ENTRIES = 2000;
 const MAX_STORED_MESSAGES = 60;
 const CONTEXT_MESSAGES = 12;
 const MAX_TOOL_ROUNDS = 5;
@@ -172,7 +185,7 @@ const els = {};
  "streakBadge", "streakGrid", "chatWindow", "userInput", "sendBtn", "syncBtn",
  "memoryView", "clearMemoryBtn", "logsSection", "logView", "refreshLogsBtn",
  "copyLogsBtn", "clearLogsBtn", "nudgeEnabled", "nudgeHour", "interviewBtn",
- "interviewBanner", "pullBtn"]
+ "interviewBanner", "pullBtn", "interviewMode", "resetPlanBtn"]
   .forEach(id => els[id] = document.getElementById(id));
 
 let state = {
@@ -190,13 +203,16 @@ let lcStats = null;
 let lcSolves = [];
 let inFlight = false;
 let lastRenderedDay = null;
+let practiceLog = []; // v3 practice tracks (fed by log_practice + content-zetamac.js)
 let interviewActive = false;
+let interviewMode = "dsa"; // key of AM_INTERVIEW_MODES
 let interviewStart = null;
 let interviewTimer = null;
 let problemContext = null; // harvested LeetCode attempt (Phase E layer 1)
 let harvestBlocked = false; // true when on a problem tab but the content script didn't answer
 
 function daysSinceStart() {
+  if (!state.startDate) return 1; // another context may have written state before init finished
   const [y, m, d] = state.startDate.split("-").map(Number);
   const start = new Date(y, m - 1, d);
   const now = new Date();
@@ -250,6 +266,19 @@ function todaysSolves() {
 
 function goalTarget() {
   return amGoalTarget(state.dailyGoal);
+}
+
+function todayTotals() {
+  return amTodayTotals(practiceLog, lcSolves, amTodayKey());
+}
+
+// Re-read before appending: content-zetamac.js writes the same key from its own tab.
+async function appendPractice(entry) {
+  const got = await chrome.storage.local.get("practiceLog");
+  const log = [...(got.practiceLog || []), entry].slice(-MAX_PRACTICE_ENTRIES);
+  await chrome.storage.local.set({ practiceLog: log });
+  practiceLog = log;
+  amLog("practice", "logged", { track: entry.track, amount: entry.amount, unit: entry.unit });
 }
 
 function reSolveQueue() {
@@ -428,7 +457,7 @@ function renderBanner() {
     ? `<strong>${e(lcStats.solved?.All ?? 0)} solved</strong> (${e(lcStats.solved?.Easy ?? 0)}E / ${e(lcStats.solved?.Medium ?? 0)}M / ${e(lcStats.solved?.Hard ?? 0)}H) · synced ${e(ago(lcStats.fetchedAt))}`
     : `no stats yet — hit 🔄 or visit your LeetCode profile`;
   const target = goalTarget();
-  const todayLine = `Today: ${e(todaysSolves().length)}${target ? `/${e(target)}` : ""} detected`;
+  const todayLine = e(amTodayLine(todayTotals(), target));
   const due = reSolveQueue();
   const dueLine = due.length
     ? ` · re-solves due: ${e(due.slice(0, 2).map(d => d.title).join(", "))}${due.length > 2 ? ` +${e(due.length - 2)}` : ""}`
@@ -638,8 +667,21 @@ function buildSystemPrompt(tabContext) {
       due.slice(0, 8).map(d => `- ${d.title} (first solved ${ago(d.first)})`).join("\n")
     : "";
   const interviewBlock = interviewActive
-    ? `${INTERVIEWER_PROMPT}\n\nInterview elapsed: ${Math.round((Date.now() - interviewStart) / 60000)} min.`
+    ? `${AM_INTERVIEW_MODES[interviewMode].prompt}\n\nInterview elapsed: ` +
+      `${Math.round((Date.now() - interviewStart) / 60000)} min. Verdict key for today: ${amInterviewKey(interviewMode)}.`
     : "";
+  const z = amZetamacStats(practiceLog);
+  const zLine = z.count
+    ? `Zetamac last ${z.last.length}: ${z.last.join(", ")} (best ${z.best}, ${z.count} games). Push toward 50, then 60.`
+    : "Zetamac: no games captured yet (arithmetic.zetamac.com, 120 s default — capture is automatic).";
+  const timedMediums = lcSolves.filter(s => s.difficulty === "Medium" && Number.isFinite(s.secs)).slice(-AM_MEDIAN_WINDOW).length;
+  const cp = amNextCheckpoint(AM_CHECKPOINTS);
+  const cpLine = cp
+    ? `Next checkpoint: ${cp.due} (${cp.daysLeft} days left) — ${cp.label}`
+    : "Next checkpoint: none left — the plan needs new dated checkpoints (update_plan).";
+  const practiceBlock =
+    `## Practice tracks (leetcode + zetamac auto-captured; log_practice for the rest)\n` +
+    `${amTodayLine(todayTotals(), target)}\n${zLine}\n${amSolveTimeLine(amMedianMediumSecs(lcSolves), timedMediums)}\n${cpLine}`;
   return [
     interviewActive ? interviewBlock : (PERSONALITIES[state.personality] || PERSONALITIES.coach),
     PROFILE,
@@ -652,6 +694,7 @@ function buildSystemPrompt(tabContext) {
     `## Today\nTarget: "${state.dailyGoal || "not set — get one out of them"}". ${todayLine} ` +
       `Streak: ${currentStreak()} day(s). Marked done today: ${!!state.history[amTodayKey()]}. ` +
       `Solves are auto-detected from LeetCode Accepted verdicts — trust the detected count over self-reports.`,
+    practiceBlock,
     dueBlock,
     problemContextBlock(),
     harvestBlocked && !problemContext
@@ -667,7 +710,9 @@ function buildSystemPrompt(tabContext) {
       : "",
     tabContext,
     `## Behaviour\nUse your tools proactively — when the user reveals anything durable, call remember ` +
-      `right away without asking. When they ask for a problem to solve: re-solve queue items come ` +
+      `right away without asking. When they mention practice on another track (Green Book problems, ` +
+      `C++ or project minutes, a mock done), call log_practice immediately — never log LeetCode or ` +
+      `Zetamac by hand, those are captured automatically. When they ask for a problem to solve: re-solve queue items come ` +
       `FIRST (use open_problem with the slug); once the queue is clear, call pick_problem with ` +
       `difficulty and topic tags chosen from the plan phase, their weak topics, and recent solves — ` +
       `never invent a problem from memory. After picking, offer open_problem. ` +
@@ -754,6 +799,13 @@ async function execTool(name, args) {
       }
       return "error: no open LeetCode problem tab found in any window — ask them to open the " +
         "problem they're working on.";
+    }
+    case "log_practice": {
+      const entry = amPracticeEntry(args);
+      if (entry.error) return `error: ${entry.error}`;
+      await appendPractice(entry);
+      renderBanner();
+      return `logged ${entry.amount} ${entry.unit} on ${entry.track}${entry.note ? ` — ${entry.note}` : ""}`;
     }
     default:
       return `unknown tool: ${name}`;
@@ -1046,9 +1098,13 @@ function renderInterviewBanner() {
   }
   const min = Math.floor((Date.now() - interviewStart) / 60000);
   const sec = Math.floor(((Date.now() - interviewStart) % 60000) / 1000);
+  const mode = AM_INTERVIEW_MODES[interviewMode];
+  const hint = interviewMode === "dsa"
+    ? "explain your approach + complexity before coding."
+    : "answer out loud, one question at a time.";
   els.interviewBanner.classList.add("active");
   els.interviewBanner.textContent =
-    `🎤 Mock interview live · ${min}:${String(sec).padStart(2, "0")} · explain your approach + complexity before coding. Hit ⏹ to end.`;
+    `${mode.emoji} ${mode.label} interview live · ${min}:${String(sec).padStart(2, "0")} · ${hint} Hit ⏹ to end.`;
 }
 
 async function toggleInterview() {
@@ -1058,21 +1114,27 @@ async function toggleInterview() {
       appendMessage("Set your OpenRouter key first.", "error-msg");
       return;
     }
+    interviewMode = AM_INTERVIEW_MODES[els.interviewMode.value] ? els.interviewMode.value : "dsa";
     interviewActive = true;
     interviewStart = Date.now();
     els.interviewBtn.textContent = "⏹";
     els.interviewBtn.classList.add("active");
+    els.interviewMode.disabled = true;
     interviewTimer = setInterval(renderInterviewBanner, 1000);
     renderInterviewBanner();
-    amLog("interview", "start");
-    await sendMessage("Begin the mock interview. Pick my problem and start.");
+    amLog("interview", "start", { mode: interviewMode });
+    await sendMessage(interviewMode === "dsa"
+      ? "Begin the mock interview. Pick my problem and start."
+      : `Begin the ${AM_INTERVIEW_MODES[interviewMode].label} interview. Ask your first question.`);
   } else {
-    amLog("interview", "end", { minutes: Math.round((Date.now() - interviewStart) / 60000) });
-    await sendMessage("End the interview now. Give me my verdict and scores out of 10, and save the score.");
+    amLog("interview", "end", { mode: interviewMode, minutes: Math.round((Date.now() - interviewStart) / 60000) });
+    await sendMessage("End the interview now. Give me my verdict and scores out of 10, and save the " +
+      `verdict with remember under the key ${amInterviewKey(interviewMode)}.`);
     interviewActive = false;
     clearInterval(interviewTimer);
     els.interviewBtn.textContent = "🎤";
     els.interviewBtn.classList.remove("active");
+    els.interviewMode.disabled = false;
     renderInterviewBanner();
   }
 }
@@ -1138,12 +1200,22 @@ function problemContextBlock() {
 async function maybeDailyCheckin() {
   if (!state.apiKey) return;
   if (state.lastCheckin === amTodayKey()) return;
-  amLog("checkin", "fired", { day: amTodayKey() });
-  const ok = await sendMessage(
-    "[Automatic daily check-in — greet me for the day. Reference my streak, whether yesterday " +
-    "was done, and anything due in the re-solve queue, then get me to commit to today's target. " +
-    "Be brief.]"
-  );
+  const sunday = new Date().getDay() === 0;
+  amLog("checkin", "fired", { day: amTodayKey(), weekly: sunday });
+  const trigger = sunday
+    ? amWeeklyReviewTrigger({
+        week: amWeekTotals(practiceLog, lcSolves),
+        streak: currentStreak(),
+        zetamac: amZetamacStats(practiceLog),
+        medianMediumSecs: amMedianMediumSecs(lcSolves),
+        resolveDebt: reSolveQueue().length,
+        checkpoint: amNextCheckpoint(AM_CHECKPOINTS),
+        solvedTotal: lcStats?.solved?.All ?? null,
+      })
+    : "[Automatic daily check-in — greet me for the day. Reference my streak, whether yesterday " +
+      "was done, and anything due in the re-solve queue, then get me to commit to today's target. " +
+      "Be brief.]";
+  const ok = await sendMessage(trigger);
   // Only mark the day checked-in when the greeting actually landed — marking it up
   // front meant one failed API call silently killed the check-in for the whole day.
   if (ok) {
@@ -1182,7 +1254,7 @@ async function renderLogs() {
 
 document.addEventListener("DOMContentLoaded", async () => {
   amLogInit("panel");
-  const stored = await chrome.storage.local.get(["state", "lcStats", "lcSolves", "lcProblemContext"]);
+  const stored = await chrome.storage.local.get(["state", "lcStats", "lcSolves", "lcProblemContext", "practiceLog"]);
   if (stored.state) {
     state = { ...state, ...stored.state };
     state.memory = { facts: {}, plan: DEFAULT_PLAN, selfNotes: "", ...stored.state.memory };
@@ -1190,10 +1262,19 @@ document.addEventListener("DOMContentLoaded", async () => {
   if (stored.lcStats) lcStats = stored.lcStats;
   if (stored.lcSolves) lcSolves = stored.lcSolves;
   if (stored.lcProblemContext) problemContext = stored.lcProblemContext;
-  if (!state.startDate) {
-    state.startDate = amTodayKey();
-    await save();
+  if (stored.practiceLog) practiceLog = stored.practiceLog;
+  if (!state.startDate) state.startDate = amTodayKey();
+  // One-time v3 migration: swap the plan and model only where they are still the untouched
+  // v2 defaults — anything the buddy or the user edited is theirs and stays. Runs after
+  // startDate is set: every save() here is visible to any other open panel, which merges it.
+  if (!state.v3MigratedAt) {
+    const changed = [];
+    if (amIsV2DefaultPlan(state.memory.plan)) { state.memory.plan = DEFAULT_PLAN; changed.push("plan"); }
+    if (!state.model || state.model === V2_DEFAULT_MODEL) { state.model = DEFAULT_MODEL; changed.push("model"); }
+    state.v3MigratedAt = Date.now();
+    amLog("init", "v3-migrated", { changed });
   }
+  if (!stored.state?.startDate || !stored.state?.v3MigratedAt) await save();
   if (!state.lcUsername && lcStats?.username) {
     state.lcUsername = lcStats.username;
     await save();
@@ -1205,6 +1286,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     chatLen: state.chat.length,
     facts: Object.keys(state.memory.facts).length,
     solvesLogged: lcSolves.length,
+    practiceEntries: practiceLog.length,
     statsAgeMin: lcStats ? Math.round((Date.now() - lcStats.fetchedAt) / 60000) : null,
     streak: currentStreak(),
   });
@@ -1230,7 +1312,7 @@ document.addEventListener("DOMContentLoaded", async () => {
   chrome.storage.onChanged.addListener(async (changes, area) => {
     if (area !== "local") return;
     // Never log amLogs_* changes here — logging a log write would loop forever.
-    const relevant = ["lcStats", "lcSolves", "state", "lcProblemContext"].filter(k => k in changes);
+    const relevant = ["lcStats", "lcSolves", "state", "lcProblemContext", "practiceLog"].filter(k => k in changes);
     if (relevant.length) amLog("storage", "changed", { keys: relevant });
     if (changes.lcStats) {
       lcStats = changes.lcStats.newValue;
@@ -1249,6 +1331,10 @@ document.addEventListener("DOMContentLoaded", async () => {
     }
     if (changes.lcProblemContext) {
       problemContext = changes.lcProblemContext.newValue || null;
+    }
+    if (changes.practiceLog) {
+      practiceLog = changes.practiceLog.newValue || [];
+      renderBanner();
     }
     if (changes.state && changes.state.newValue &&
         changes.state.newValue._rev !== state._rev) {
@@ -1296,6 +1382,14 @@ document.addEventListener("DOMContentLoaded", async () => {
     renderMemory();
     renderBanner();
     amLog("memory", "reset");
+  });
+  els.resetPlanBtn.addEventListener("click", async () => {
+    state.memory.plan = DEFAULT_PLAN;
+    await save();
+    renderMemory();
+    renderBanner();
+    note("📋 Plan reset to the v3 default (dated checkpoints to Sep 2027).");
+    amLog("memory", "plan-reset-v3");
   });
   els.logsSection.addEventListener("toggle", () => {
     if (els.logsSection.open) renderLogs();

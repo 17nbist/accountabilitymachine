@@ -19,7 +19,7 @@
     <label>OpenRouter API key</label>
     <input type="password" id="apiKey" placeholder="sk-or-v1-...">
     <label>Model</label>
-    <input type="text" id="model" placeholder="z-ai/glm-5.2">
+    <input type="text" id="model" placeholder="anthropic/claude-haiku-5.5">
     <label>LeetCode username</label>
     <input type="text" id="lcUsername" placeholder="adonno55">
     <label>Personality</label>
@@ -37,7 +37,10 @@
   <details class="settings">
     <summary>🧠 Memory (AI-managed)</summary>
     <pre id="memoryView"></pre>
-    <button id="clearMemoryBtn" class="danger">Reset memory</button>
+    <div class="log-actions">
+      <button id="resetPlanBtn">Reset plan to v3 default</button>
+      <button id="clearMemoryBtn" class="danger">Reset memory</button>
+    </div>
   </details>
 
   <details class="settings" id="logsSection">
@@ -63,7 +66,13 @@
   <div id="chatWindow" class="chat-window"></div>
 
   <div class="input-area">
-    <button id="interviewBtn" title="Start / end a mock interview">🎤</button>
+    <select id="interviewMode" title="Mock interview mode">
+      <option value="dsa">DSA</option>
+      <option value="quantdev">Quant dev</option>
+      <option value="cv">Defend CV</option>
+      <option value="trader">Trader</option>
+    </select>
+    <button id="interviewBtn" title="Start / end a mock interview in the selected mode">🎤</button>
     <textarea id="userInput" rows="1" placeholder="Talk to your buddy... (Shift+Enter for newline)"></textarea>
     <button id="sendBtn">Send</button>
   </div>
@@ -72,6 +81,7 @@
   <script src="vendor/purify.min.js"></script>
   <script src="log.js"></script>
   <script src="shared.js"></script>
+  <script src="practice.js"></script>
   <script src="sidepanel.js"></script>
 </body>
 </html>

@@ -85,9 +85,39 @@ Both layers are fully error-logged via the v1.3 logger (`ctx: content`, componen
 harvest attempt, which selectors/localStorage keys hit or missed, and any replay failure. Silent
 scrape failure is the main risk — the logs must make it obvious when LeetCode changes its DOM.
 
+## v3.0 — SHIPPED (multi-track interview prep, Nov 2026)
+
+Target moved to the July 2027 application window (2028 new-grad SWE + quant dev + trader
+OAs). Everything reuses the existing machinery; the only new site integration is Zetamac.
+
+- [x] PROFILE / DEFAULT_PLAN refreshed (Year 3 MSci, Barclays summer 2027, dated checkpoints to
+      Sep 2027). One-time migration swaps plan + model only if they are still the untouched v2
+      defaults; "Reset plan to v3 default" button covers edited plans.
+- [x] Default model → `anthropic/claude-haiku-5.5` (above GLM-5.3 on the Artificial Analysis
+      index at ~1/10 of GLM-5.2's routed price; `z-ai/glm-5.3` is the same-price in-family option).
+- [x] Practice tracks: `practiceLog` + six fixed tracks + `log_practice` tool; "Today: …" line in
+      banner and prompt. LeetCode target still the only streak gate.
+- [x] Zetamac auto-capture (`content-zetamac.js`): triggers on the input being disabled at zero
+      seconds, reads "Score: N" from the end banner, logs hits/misses under component `zetamac`.
+      Overlay gets "Take me to Zetamac". Prompt gets last 7 scores + best.
+- [x] Solve times: `firstSeen[slug]` → `secs` (3 h cap) + difficulty on each solve; prompt gets the
+      median Medium time over the last 10.
+- [x] Interviewer modes: DSA / Quant dev / Defend CV / Trader selector beside 🎤, prompts in
+      `practice.js`, verdicts under `interview_<mode>_YYYYMMDD`.
+- [x] Sunday review: weekly trigger replaces the daily check-in on Sundays, graded against the
+      next dated checkpoint; buddy may call `update_plan`.
+- [x] Test harness: `npm test` (Node built-in runner, zero deps) over the pure logic in
+      `practice.js`; `npm run check` syntax-checks everything.
+
+Known trade-offs: `practiceLog` is read-modify-write from two contexts (panel tool + Zetamac tab);
+both re-read before appending, so a collision needs a chat tool call in the same instant a game
+ends. `e2e/run.js` (`npm run e2e`) exercises everything in a real Chromium, including a real Zetamac game;
+leetcode.com itself answers 403 to headless Chromium, so the LeetCode content script is tested on a
+fixture served under the real origin. The log ring buffer is per-context and read-modify-write, so
+two panels open at once (two windows) can drop each other's log entries — cosmetic, logs only.
+
 ## Later / maybe
 - [ ] Auto-detect the problem *opened* (not just solved) to pre-warm interviewer context
-- [ ] Weekly summary email/notification (solves, streak, queue debt) — Sunday retrospective
-- [ ] "Defend your CV" mode — same interviewer machinery, pointed at ReviewBot/dcheck instead of DSA
+- [ ] Make non-LeetCode tracks gate the streak if the LeetCode-only gate gets too easy
 - [ ] Export solve log as CSV for spreadsheet nerds
 - [ ] chrome.storage.sync for multi-machine continuity (currently local-only by design)

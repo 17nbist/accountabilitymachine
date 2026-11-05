@@ -1,23 +1,44 @@
 {
   "manifest_version": 3,
   "name": "Accountability Machine",
-  "version": "2.6.0",
-  "description": "AI accountability buddy for the LeetCode grind. Auto-detects your solves, nudges you past distractions, runs mock interviews, and maintains its own memory of you.",
+  "version": "3.0.0",
+  "description": "AI accountability buddy for interview prep: LeetCode solves and solve times, Zetamac scores, probability/C++/project tracks, four mock-interview modes, distraction overlay, and a self-editing memory.",
   "minimum_chrome_version": "116",
-  "permissions": ["sidePanel", "storage", "tabs", "alarms", "notifications"],
-  "host_permissions": ["https://openrouter.ai/*", "https://leetcode.com/*"],
+  "permissions": [
+    "sidePanel",
+    "storage",
+    "tabs",
+    "alarms",
+    "notifications"
+  ],
+  "host_permissions": [
+    "https://openrouter.ai/*",
+    "https://leetcode.com/*",
+    "https://arithmetic.zetamac.com/*"
+  ],
   "background": {
     "service_worker": "background.js"
   },
   "content_scripts": [
     {
-      "matches": ["https://leetcode.com/*"],
-      "js": ["log.js", "shared.js", "content-lc.js"],
+      "matches": [
+        "https://leetcode.com/*"
+      ],
+      "js": [
+        "log.js",
+        "shared.js",
+        "practice.js",
+        "content-lc.js"
+      ],
       "run_at": "document_idle"
     },
     {
-      "matches": ["https://leetcode.com/*"],
-      "js": ["inpage-monaco.js"],
+      "matches": [
+        "https://leetcode.com/*"
+      ],
+      "js": [
+        "inpage-monaco.js"
+      ],
       "world": "MAIN",
       "run_at": "document_idle"
     },
@@ -30,7 +51,23 @@
         "https://*.instagram.com/*",
         "https://*.twitch.tv/*"
       ],
-      "js": ["log.js", "shared.js", "content-distraction.js"],
+      "js": [
+        "log.js",
+        "shared.js",
+        "content-distraction.js"
+      ],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": [
+        "https://arithmetic.zetamac.com/*"
+      ],
+      "js": [
+        "log.js",
+        "shared.js",
+        "practice.js",
+        "content-zetamac.js"
+      ],
       "run_at": "document_idle"
     }
   ],

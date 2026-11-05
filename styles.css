@@ -347,6 +347,24 @@ textarea {
   font-size: 15px;
 }
 
+#interviewMode {
+  flex-shrink: 0;
+  height: 33px;
+  max-width: 86px;
+  padding: 0 4px;
+  border: 1px solid #2b3145;
+  border-radius: 6px;
+  background: #161a24;
+  color: #aab6d9;
+  font-size: 11px;
+  cursor: pointer;
+}
+
+#interviewMode:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
 #interviewBtn:hover {
   background: #1f2534;
 }

@@ -1,9 +1,22 @@
 # Accountability Machine
 
-Chrome side-panel AI companion for the LeetCode grind, powered by OpenRouter
-(default model: `z-ai/glm-5.2`). It tracks a daily streak, syncs your real LeetCode
-stats, sees the problem you have open (hints only, never solutions), notices when
-you're on YouTube instead — and maintains **its own memory of you** via tool calls.
+Chrome side-panel AI companion for interview prep, powered by OpenRouter
+(default model: `anthropic/claude-haiku-5.5`, editable in Settings). It tracks a daily
+LeetCode streak and solve times, captures Zetamac scores, logs probability / C++ /
+project / mock practice, runs four kinds of mock interview, sees the problem you have
+open (hints only, never solutions), notices when you're on YouTube instead — and
+maintains **its own memory of you** via tool calls.
+
+## Development
+
+No build step and no dependencies. `npm test` runs the unit tests for the pure logic in
+`practice.js` and `shared.js` (Node's built-in runner); `npm run check` syntax-checks
+every script and the manifest. `npm run e2e` launches a real Chromium with the extension
+loaded (Playwright, dev dependency) and drives it end to end: a real 30-second Zetamac game,
+the LeetCode content script on a fixture served under the real origin, the chat tool loop
+against a mocked OpenRouter stream, interview modes, Sunday review, overlay, and a sweep of
+the extension's own logs. Set `AM_HEADED=1` to watch it; screenshots and log dumps land in
+`e2e/out/`.
 
 ## Setup
 
@@ -49,22 +62,49 @@ The AI has four tools it calls on its own, visible as 🧠 notes in the chat:
 | `remember` / `forget` | Store/remove persistent facts about you (weak topics, schedule, milestones) |
 | `update_plan` | Rewrite the training plan section of its own system prompt |
 | `edit_self_notes` | Rewrite its private coaching-strategy notes |
+| `log_practice` | Log a self-reported session on the probability / cpp / project / mock tracks |
 
 Everything lives in `chrome.storage.local` — inspect or wipe it via the 🧠 Memory
 section in the panel.
 
+## Practice tracks (v3)
+
+One generic log, `practiceLog`, with six fixed tracks: `leetcode` (auto, from Accepted
+verdicts), `zetamac` (auto, see below), `probability` (problems), `cpp` (minutes),
+`project` (minutes), `mock` (count). The banner and the buddy's context carry a one-line
+"Today: LC 1/2 · Zetamac 47 · Prob 0 · C++ 0m · Project 0m · Mock 0" summary. Only the
+LeetCode target gates the streak; the other tracks are visible pressure.
+
+- **Zetamac** — a content script on `arithmetic.zetamac.com` records the final score when
+  a game ends (the input is disabled at zero seconds; the score is read from the end
+  banner). The buddy sees the last 7 scores and the best. Use the "Take me to Zetamac"
+  button on the distraction overlay.
+- **Solve times** — each solve stores seconds from first opening the problem in that tab to
+  the Accepted verdict (capped at 3 h) plus its difficulty. The buddy sees the median Medium
+  time over the last 10, so "Medium in ~20 min" is measurable.
+- **Mock interviews** — the selector beside 🎤 picks DSA, Quant dev (C++ / systems / a light
+  probability question, verbal), Defend CV (dcheck, Deel write-back, ReviewBot, the startup
+  prototype) or Trader (mental maths and expected value, rapid fire). Verdicts are stored
+  under `interview_<mode>_YYYYMMDD`.
+- **Sunday review** — on Sundays the first check-in becomes a weekly review: totals per
+  track, streak, Zetamac trend, median solve time, re-solve debt and the next dated
+  checkpoint; the buddy calls `update_plan` if the plan needs adjusting.
+
 ## The plan (seeded, AI-maintained from there)
 
-1. **Phase 1 (current):** LeetCode's official DSA crash course — every module, honestly.
-2. **Phase 2:** NeetCode 150 in Python, ~15 problems/week, re-solving misses 2–3 days later.
-3. One timed mock interview per week from Phase 2 week 3.
-4. Hard deadline: OA-ready by mid-September 2026 (new-grad applications open).
+Dated checkpoints to the July 2027 application window (2028 new-grad SWE at Databricks /
+Stripe tier, quant dev at Optiver / IMC / G-Research / Maven / Qube, trader OAs as a bonus):
+
+1. **Now → Feb 2027:** NeetCode 150 in Python, Zetamac daily, Green Book ch. 1-3.
+   Checkpoint 28 Feb: ~100 solved, typical Medium in ~20 min.
+2. **Feb → Apr 2027:** some Hards, C++ fundamentals, order book project.
+   Checkpoint 30 Apr: order book with benchmarks on GitHub.
+3. **May → Jun 2027:** weekly mocks, timed OAs. Checkpoint 30 Jun: Zetamac 50+, 5+ referral contacts.
+4. **Jul → Sep 2027 (Barclays internship):** maintenance mode, 1 h weekdays + weekend blocks,
+   apply in week one of each opening.
+
+Existing installs keep the plan the buddy has been editing; "Reset plan to v3 default" in
+the 🧠 Memory section swaps in the above.
 
 House rules the buddy enforces: no AI while solving, explain every solution back with
 its complexity, re-solve struggles from scratch days later.
-
-## Ideas for later (only after the streak is real)
-
-- Detect an Accepted submission on leetcode.com and auto-mark the day done
-- HabitLab-style intervention overlay on distraction sites during study hours
-- Daily `chrome.alarms` nudge if the target isn't done by 8pm
