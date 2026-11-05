@@ -37,8 +37,9 @@
     <section id="tab-library" class="panel" role="tabpanel" aria-labelledby="tabbtn-library" hidden></section>
   </main>
 
-  <!-- Load order: V4-CONTRACTS §A5. prep/*.js and prep-loader.js arrive in later milestones;
-       until then their tags 404 and prep-ui.js checks each global with typeof. -->
+  <!-- Load order: V4-CONTRACTS §A5. A prep/*.js file whose milestone has not landed 404s;
+       prep-ui.js checks each global with typeof, and a tab whose modules are missing says so.
+       No inline scripts (MV3 CSP). -->
   <script src="vendor/katex/katex.min.js"></script>
   <script src="vendor/katex/contrib/auto-render.min.js"></script>
   <script src="vendor/marked.min.js"></script>

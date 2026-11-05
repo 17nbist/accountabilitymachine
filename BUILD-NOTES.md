@@ -467,7 +467,8 @@ writers and reviewers, settled before the pre-lock tag)
 - **`bank:build` skeleton (until the M2 pipeline lands).** Every step prints
   `bank:build <step>: not implemented yet` and the run exits 1, because nothing was built.
   `--help`, `-h` and `help` exit 0. An unknown step or source exits 1 with the usage text. The
-  `decks` step takes `cpp` or `systems` as its second argument. (§M7)
+  `decks` step takes `cpp` or `systems` as its second argument. (§M7) The argument handling is
+  unchanged in M2; the steps themselves are described under "M2: bank:build pipeline" below.
 
 **M1: prep/rng.js** (implementer choices, not marked in `V4-CONTRACTS.md`)
 
@@ -572,6 +573,231 @@ writers and reviewers, settled before the pre-lock tag)
   treats the bank as missing (bank-missing screen, still `data-ready="1"`), and `prep:modules`
   lists `prepLoadBank`. (§E6, §J1)
 
+**M3: prep/market.js** (implementer choices, not marked in `V4-CONTRACTS.md`)
+
+- The width check allows for float noise. A quote is too wide only when
+  `ask − bid > maxWidth + EV_EPS`, so a decimal quote whose float difference lands a few ulps over
+  the maximum (e.g. `10.1 / 14.1` on dice) counts as exactly `maxWidth`. `bid < ask` stays
+  strict. (§G3)
+- `conditionalEV` throws on impossible input, not only on `m > n`: a `scenario` that is not an
+  object, an unknown `kind`, an `n` that is not an integer of at least 0 (cards: at most 52), a
+  `revealed` that is not an array (`null` / `undefined` read as `[]`), or a revealed unit that is
+  not a die face 1–6, a card rank 1–13 (at most 4 of a rank) or a coin flip 0 / 1. With
+  everything revealed it returns the revealed sum, so a full 52-card deck never divides 0 by 0.
+  (§A4, §G4)
+- `createGame`: "given" means not `null` / `undefined` (the `??` of the §G1 table) for `n`,
+  `batch`, `values`, `bots`, `maxPos` and `maxWidth`. `maxPos` and `maxWidth` must be finite
+  numbers (a string, `NaN` or `Infinity` throws, as the state must survive JSON). A non-integer
+  `maxPos` is allowed and acts as its floor. `opts.batch` is ignored for dice and cards (their
+  `batch` is `null`). `opts` of `null` reads as `{}`; any other non-object `opts` throws. (§G1)
+- `-0` is stored as `0` wherever it could enter the state (an injected coin flip, a quote value
+  such as `"-0"`), so the state always survives a JSON round trip. (§G1, §G3)
+- `submitQuote` returns a state that shares no array or object with its input (`outcomes`,
+  `revealed` and `history` are copied). The result's `fills` are copies of the new history fills,
+  so changing one never changes the other, and `reveal` is a fresh array. A rejected quote
+  consumes no draw. (§A3, §G3)
+- Error texts: the finished-game error says "over"; the quote errors are "The <field> must be a
+  number.", "The bid must be below the ask." and "The quote width … is above the maximum of …".
+  No message contains another check's keyword, except that a number error names its field. (§A4,
+  §G3)
+- `validateQuote`, `submitQuote`, `settle`, `runEntry` and `goodQuoterLine` throw a `TypeError`
+  for a `state` that is not an object with a known `kind`. `runEntry` also throws a `TypeError`
+  when `ts` is not a finite number: it has no `Date.now()` default. (§A1, §A4, §G5)
+- `settle` subtracts each informed term from 0, so `adverse` with no informed fills is `+0`.
+  (§G5, §N6)
+
+**M3: prep/oa.js** (implementer choices, not marked in `V4-CONTRACTS.md`)
+
+- An unknown kind throws in every export that takes a kind (`defaultConfig`, `normalizeConfig`,
+  `configError`, `isDefaultConfig`, `sameConfig`, `generate`, `scoreRun`, `personalBest`,
+  `trend`). (§A4, §F6)
+- `configError` returns the first problem it finds, checking ops, then the ranges (`addA`,
+  `addB`, `mulA`, `mulB`), then division, then duration. Each message is a sentence the OA tab
+  can show as it is. (§F2)
+- The exported constants are frozen. `defaultConfig`, `normalizeConfig` and `generate` return
+  fresh objects every time, and each question has its own `answer.tol` object. (§A3)
+- Seq: a shuffle picks 7 families to get a second question, then all 15 are shuffled. On top of
+  the two §F4 rejection rules, a draw is also rejected (a) when its own family's fit does not
+  return the drawn parameters, which cannot happen inside the ranges but guarantees `q.params`
+  lie in them, or (b) when its shown terms repeat an earlier question in the run. Every
+  rejection counts toward the 100. (§F4)
+- `seqFit` / `seqNext` return `null` for anything that is not an array of exactly 7 integers. An
+  unknown id is checked first and throws. `-0` in a fit or a next term comes out as `0`. (§F4)
+- EV: the two questions of a template use different parameters, namely the first two entries of
+  a shuffled copy of that template's finite parameter grid. Prompts are plain English and give
+  the ranks as A = 1 … K = 13. (§F5)
+- EV values are exact integer counts with one division at the end, so `answer.value` is the
+  correctly rounded value of the exact rational (`"10.6"`, not `"10.599999999999994"`). The
+  dice-reroll DP is kept as `num / f^(j+1)`. cards-first-high enumerates the position of the
+  first high card, counted over the `C(52, high)` sets of positions the high cards can occupy
+  (Pascal's triangle by DP). (§F5)
+- `scoreRun`: an entry that is not an object counts as skipped. A non-array `answers` other than
+  `null` / `undefined` throws a `TypeError`. `config` has no default parameter, because
+  `normalizeConfig` already reads `undefined` as the default. (§A3, §F7)
+- `personalBest` / `trend` count only object entries whose `score` is a finite number, so a
+  string score never matches. `trend` sorts a non-finite `ts` first, and equal `ts` values keep
+  their array order. A non-array `runs` other than `null` / `undefined` throws. (§F7)
+- `formatClock` shows a non-finite input (`NaN`, `±Infinity`) as `"0:00"`. (§F6)
+
+**M2: bank:build pipeline** (`bank-build/build.js`, `bank-build/lib/*.js`; implementer choices,
+not marked in `V4-CONTRACTS.md`)
+
+- **Steps.** `ocr` runs `ocrmypdf --jobs <cpus-2>` on the scan only when
+  `.cache/greenbook-ocr.pdf` is missing (after `brew install ocrmypdf` if the command is missing),
+  then always checks that `pdftotext` yields more than 100 KiB (102,400 bytes) and rewrites
+  `.cache/greenbook-ocr.txt`. `extract`, `resolve` and `decks` are agent steps, so they only print
+  per source (or deck): chunks, item counts, skipped, statuses, missing resolve chunks, unresolved
+  and orphan locators. They exit 1 on a malformed cache file: invalid JSON, or the wrong top-level
+  shape (`items` not an array / object, an item that is not an object, an unknown resolve status
+  or audit verdict). Other oddities (chunkId or sourceKey differing from the path, a chunk with no
+  extract chunk) are warnings. `all` runs every step even after one fails and exits 1 if any did.
+  The `[source]` argument filters `ocr`, `extract`, `resolve`, `sim` and `decks`; `assemble` and
+  `report` always cover the whole bank and say so. (§M7)
+- **Cache layout.** The per-chunk cache (§3 "The M2 cache is per chunk") is read as is. `sim` also
+  writes `.cache/sim-run.json` (per script: status, time, exit code, error, counts) for the report.
+  A sim entry that fails gets `ok: false` and a `note`. (§M7)
+- **`sim`.** It re-runs every `bank-build/sim/items/<key>-<chunk>.py` with `python3 -I` (cwd the
+  script's folder, 120 s timeout, `min(8, cpus/2)` at a time, `BANK_SIM_JOBS` overrides). The key
+  is the name up to the first hyphen (keys have none). Output is the whole stdout as JSON, else
+  the last line-initial `{` from which the rest parses; `NaN` / `Infinity` read as `null`. Each
+  result is compared with the item's answer after merging (resolve, audit): `enum` must match
+  exactly (relative 1e-9, absolute floor 1e-12), `mc` must be within 3 standard errors; an item
+  with an explicit `answer.tol` also passes when `checkNumeric` accepts the estimate (an
+  inherently approximate answer cannot match an exact enumeration). `mc` without a positive `se`
+  counts only as an exact match. A script that crashes, times out or prints no JSON turns every
+  result its chunk had into `ok: false`, so an old estimate never counts as a pass. The step exits
+  1 on any conflict (the sim disagrees) or failure (no comparison possible, e.g. an answer that
+  does not parse). Results for missing or non-numeric items are reported as orphans.
+  (spec §10.3)
+- **Merge (`assemble`).** Per extract item: a resolve entry with `drop: true`, a key in
+  `.cache/dedup.json` `drop`, or an audit verdict `drop` removes it. `check.status` is the resolve
+  status, or `unverified` when the item has no resolve entry. A `corrected` entry replaces
+  `answer` / `solution` when it carries them; a replacement on an `agreed` / `disputed` entry is
+  ignored with a warning. `check.printed` (corrected and disputed) is the resolve `printed`, else
+  the extractor's `check.printed`, else the extracted answer text (`answerText`); for corrected
+  items `check.resolved` is the resolve `resolved`, else the stored answer's text. A disputed
+  item keeps the extracted answer and takes `resolved` from the resolve entry only. Agreed items
+  carry only `status`, `method` and `note`. An audit `corrected` / `disputed` verdict is applied
+  after the resolve entry the same way (a disputed verdict restores the extracted answer and
+  solution unless it gives its own `answer`); `ok` changes nothing. `check.method` is
+  `"blind+sim"` when the item's sim result (re-compared against the final answer) agrees, else
+  `"blind"`, and absent on unverified items, so the acceptance check counts them. `check.note`
+  comes from the resolve entry or the verdict. Cards keep the card checker's `check` (status,
+  printed, resolved, method, note); dedup and audit apply to them too, keyed
+  `<card source.key>/<locator>`. Ids are `makeId(<cache folder key>, locator, item)` for practice
+  items and `makeId(source.key, locator, item)` for cards. Output items carry only the §E2 fields
+  (no `locator`). (§E2, §E3, spec §10.3)
+- **Order.** `bank.json`: sources by `sources.json` priority, then the source's PDF (in order of
+  first appearance in its chunk files, chunk files in natural order), then `source.page`, then
+  file order. For a one-file source that is exactly priority, page, file order; a multi-file
+  source (Stat 110, the MIT folders) keeps each PDF's pages together instead of interleaving page 1
+  of every PDF. Decks: chunk files in natural order, then file order. (§D6, §M7)
+- **Build checks beyond `bankValidate`.** Each fails the build like a validator error: a locator
+  that does not match `LOCATOR_RE`, is longer than 40 characters, or repeats within one source key
+  (dedup and audit keys would be ambiguous); `source.key` differing from the cache folder; a
+  practice item with a card area, or a card whose area is not its deck; the §E2 stored-answer rule
+  (a corrected numeric / mcq item must store `check.resolved` as `answer.value` / the correct
+  choice text, a disputed one `check.printed`); a cited file missing from the library plan or
+  from `bank/library/` after copying; a malformed NeetCode list. Validation runs on the merged set
+  and on each output file; each distinct error is printed once with id, field and message, then
+  grouped by (source, field, kind). (§E2, §E4)
+- **Failed builds write no bank.** On any validator or build-check error, `assemble` still copies
+  the library and writes `lists/neetcode150.json` and `library/index.json`, but it does not write
+  `bank.json` or the decks and removes older copies, so the UI never loads a stale or invalid bank
+  next to a newer library and report ("Bank not built", spec §2). `report` recomputes the merge
+  itself, so it works after a failed `assemble`. (spec §10.5)
+- **File format.** `bank.json` and the decks are `{ version: 1, generated, items }` (decks also
+  `deck`) with one item per line, so a diff or grep shows whole items. `generated` is the build
+  time. `lists/neetcode150.json` is the library file unchanged, after checking `list`, `source`,
+  `count === problems.length` and the `problem` / `slug` / `difficulty` / `leetcode_id` keys.
+  (§E1)
+- **Library.** `bank/library/` holds every PDF under the six §E1 folders of the resource library
+  plus every other file an item cites (the Core Guidelines markdown), at the same relative path,
+  so an entry's `file` is exactly its items' `source.file`. Copies use `COPYFILE_FICLONE` (an APFS
+  clone, no extra disk space), an existing copy with the same size and a newer mtime is kept, and
+  files no longer in the plan are removed. The OCR'd Green Book replaces the scan at the scan's
+  path. Spec §10.5 says "renamed to the manifest slugs": `manifest.json` has no slug field, and
+  `sources.json` `manifestSlug` is the file name without `.pdf` (or the course folder), so the
+  §E1 rule (`file` equals `source.file`) means no file is renamed. (§E1, spec §10.5)
+- **Library index.** Categories are the §E1 folders and labels, by the file's first path segment,
+  in folder order; entries in natural path order. Title: the `manifest.json` entry whose
+  `local_paths` lists the file or its folder (with `: <file name>` appended when the entry covers
+  several files), else the `sources.json` title (with the file name for a glob source), else the
+  most common `source.title` of the items citing it, else the file name. `key`: the source key with
+  the most items citing the file (ties: plain `<` order); a file cited by several card keys (the
+  agents gave some books more than one key) is listed with the others in the report. (§E1)
+- **`report`.** Acceptance: 0 validator errors; at least 600 practice items; at least 300 cards;
+  no practice source key over 40%; disputed items at most 5% of all items (practice and cards);
+  every numeric item (practice and cards) carries `check.method`. A separate row covers the build
+  checks above. `report` exits 1 when any row fails. (spec §10.6)
+
+**M3: prep/readiness.js (§H1, §H5, §H10, §H11 helpers)** (implementer choices, not marked in
+`V4-CONTRACTS.md`; M6 adds the rest of the module)
+
+- **`mistakeTopics` (§H5) ships in M3.** The session summary's `summary-weakest` is defined as the
+  top 3 topics of `mistakeTopics` (§J2), so M3 needs it. It lives in the module (the contract's
+  single definition) rather than as a copy in `prep-ui.js`. `weakestTopics` and the other §H2-§H4,
+  §H6-§H9 exports are still M6 work. (§H5, §J2)
+- `mistakeTopics` counts a mistake once per distinct topic of its item (a topic listed twice on
+  one item does not double it), and skips entries that are not objects or whose `itemId` is not a
+  string. (§H5)
+- `historyEntry` reads a non-object argument as `{}`; `upsertSessionEntry` replaces only the
+  FIRST element with the same `ts`, `track` and `note`. (§H1, §H10)
+- The "Check my reasoning" system text asks for a short critique (what is right, the first real
+  mistake, the fixing step), forbids a grade, score or correct/incorrect verdict, and invites the
+  model to say so if the reference answer looks wrong. (§H11)
+
+**M3: prep.html Practice, Cards and Today settings** (`prep-ui.js`, `prep.html`, `prep.css`;
+implementer choices, not marked in `V4-CONTRACTS.md`)
+
+- **Sessions.** The queue is fixed at session start. A session is "active" from its start until
+  its summary (or empty screen) shows, so the Practice tab auto-starts a new session when it is
+  shown again after one ended; the summary also has a "Start a new session" button. Cards
+  auto-starts only on its first show (§J2). An empty queue shows `[data-role=empty]` with the
+  reason (nothing due, no area ticked, unknown `item=` id) and no summary. (§J2)
+- **URL.** `item=` and `source=` open the Practice tab whatever `tab=` says, and `item=` wins if
+  both are given. `mistake=` must be a decimal safe integer and counts only with `item=`. With no
+  `prepMistakes` entry for that `(ts, itemId)` the note editor still shows (empty), and Save writes
+  nothing and says the mistake is no longer in the journal. Every match of `(ts, itemId)` is
+  updated. `seed=` is parsed once into `pageSeed()` for the OA and market tabs (M4, M5). (§J1)
+- **Grade labels and cards.** Labels (auto-grade and the free grade buttons) come from the card
+  read at session start, updated in memory after each answer. Each answer's write re-reads
+  `prepHistory`, `prepCards` and `prepMistakes`, sets all three in ONE `storage.set` (the card is
+  `schedule(stored card, grade, ts)`), then re-reads and upserts `practiceLog`. All prep.html
+  writes run through one promise chain. The summary waits for the session's writes before it
+  counts due-tomorrow. (§H1, §H10, §I, §J2)
+- **Free items.** The working box becomes read-only at Reveal, so the stored working is what was
+  written before seeing the answer. `data-answered` stays `"0"` until the grade click (the moment
+  history is written). Ending a session on a revealed but ungraded item writes nothing for it. (§J2)
+- **Broken items.** A numeric item whose stored answer does not parse shows a warning and a Skip
+  button (`data-role="skip"`, an extra role); a submit shows `result[data-state=error]` and nothing
+  is written. (§C2)
+- **Results.** The result text says `Correct: <your value> matches <answer> = <value>` or `Wrong:
+  you gave …; the answer is …` (mcq: the correct choice). A parse error's text is the parser's
+  message plus "Nothing was recorded". The solution box shows the answer (with its value for an
+  expression), the solution, and for corrected items a "the source printed X" line; the corrected
+  note is shown only after answering, so it never gives the answer away. (§J2)
+- **Markdown and maths.** Maths spans (`$$…$$`, and `$…$` whose opening `$` is followed by a
+  non-space and whose closing `$` is preceded by a non-space and not followed by a digit) are cut
+  out before `marked`, kept as private-use placeholders through DOMPurify, then rendered with
+  `katex.render` (`throwOnError: false`). Code spans and fences are left alone. Links open in a new
+  tab. mcq choices, the disputed banner and the answer line are plain text, so their text equals the
+  stored strings. (spec §3 F1.4, §J2)
+- **Keyboard.** Keys pressed on a focused button or link are left to the browser, so no key acts
+  twice. After an auto answer focus moves to Next (Enter or Space there advances natively); the
+  Enter that submits is `preventDefault`-ed so it cannot also click the newly focused Next. A
+  numeric item focuses its input when shown; a free item focuses nothing, so Space reveals at
+  once. Held keys (`repeat`) do not grade or advance. (§J2)
+- **Check my reasoning.** `working` is the free text trimmed (whitespace only counts as none);
+  `answer` is the numeric input exactly as submitted, the chosen choice text, or `""` for free
+  items. The button is disabled while a request runs and can be run again after `done` or
+  `error`. Only `delta.content` is shown (reasoning deltas are ignored). A stream still running
+  when the item changes or the session ends is aborted and its result dropped. The no-key text
+  reads "No OpenRouter API key yet …". Log events: `reasoning:start|done|failed|no-key`. (§J11)
+- **Today.** The tab shows `#today-due` (all areas) and the settings form. A blank number field
+  saves the default; a value `normalizeSettings` replaces is reported next to Save. The drill
+  banner and `#drill-start` arrive with M7 (they need §H9). (§J3)
+
 ## 2. Violations
 
 (none yet)
@@ -673,6 +899,29 @@ writers and reviewers, settled before the pre-lock tag)
   `lock:verify` report "pre-lock". So every milestone gatekeeper also checks that
   `tests/LOCK.json` exists, that `git rev-parse v4-red` still equals the sha recorded at lock
   time, and that `git status` is clean for every lockable root.
+
+**M2: bank:build pipeline**
+
+- **`all` re-runs every simulation.** The 60 scripts take about 1 to 2 minutes in parallel on this
+  Mac (the slowest about 55 s alone), so a full `npm run bank:build` costs that every time. In
+  exchange no cached estimate is trusted without a re-run, and the estimates are seeded, so a
+  re-run reproduces them exactly (the first re-run matched all 676 agent results bit for bit).
+- **The library lists every PDF.** About 700 PDFs (all six folders, uncited ones included) are
+  copied and indexed, so the Library tab is long. Clones cost no disk space on APFS; on another
+  file system the first build copies about 450 MB (later builds skip up-to-date copies).
+- **Multi-file titles are generic.** A file from a manifest entry that covers many files is titled
+  `<entry title>: <file name>`, even when a card gives that file a nicer short title.
+- **One key per library entry.** A file that several card keys cite (e.g. one book under three
+  keys) gets the key with the most items. The Library tab counts items by `file`, so its count is
+  still complete; only the `key` field names one of them.
+- **A failed rebuild removes the old bank.** After a cache edit that breaks validation, the
+  extension shows "Bank not built" until the cache is fixed, rather than loading the previous
+  bank next to a library and report that no longer match it.
+- **The §E2 stored-answer check also catches status misuse.** A card checker that marked a card
+  `corrected` but changed only its solution ("answer unchanged") fails the build, because a
+  corrected numeric or mcq card must store `check.resolved` as its answer. The cache data is the
+  place to fix that (status `agreed` with a note, or a `resolved` equal to the answer), not the
+  build.
 
 **Concurrent storage writes**
 
@@ -811,3 +1060,38 @@ regexes and the §M4 steps as written)
 - **Ignored files under `tests/` pass the pre-lock check.** §M4 uses `--exclude-standard`, so a
   file ignored through `.git/info/exclude` gets locked. It is not committed, so a fresh clone
   fails verify. Such a file only adds tests, so it cannot weaken one.
+
+**M3: prep/market.js**
+
+- **Every round copies the whole state.** `submitQuote` copies `outcomes` and every history
+  record, so a game costs O(rounds²) small copies. At the drawn ranges a game has at most 10
+  rounds (dice 10, cards 8, coins 8), so this is negligible. In exchange, an old state
+  can never be changed through a newer one and can be replayed.
+- **The width tolerance accepts a quote up to 1e-9 wider than `maxWidth`.** No user types prices
+  that fine, and without it some decimal quotes at exactly the maximum width would be rejected.
+
+**M3: prep/oa.js**
+
+- **EV answers are recomputed on every `generate`, with no cache.** The largest enumeration is
+  cards-max with `k = 3`, which walks 22,100 hands, so an ev run costs a few milliseconds. In
+  exchange the module holds no state, and each value comes straight from its template's
+  definition.
+- **Every seq draw runs all 8 fits.** The primes fit scans up to 101 offsets. A run still takes
+  well under a millisecond: the locked 20,000-seed sweep takes about 1 s, including the test's
+  own oracle.
+
+**M3: prep.html Practice and Cards**
+
+- **An `again` item is not shown again in the same session.** The queue is fixed when the session
+  starts (§D6 has no in-session relearning step), so a lapsed item returns in the next session once
+  its 10 minutes are up. In exchange the session length and the summary are predictable.
+- **Coming back to Practice after a finished session replaces its summary.** §J2 auto-starts a
+  session whenever the tab is shown and none is active, and a finished session is not active. The
+  summary is gone once you leave and return; Cards (which auto-starts only once) keeps it.
+- **Labels can drift from storage if another tab grades the same item.** Grade labels use the card
+  read at session start; the write itself re-reads the stored card, so storage stays right, but a
+  second prep.html tab grading the same item mid-session can make a shown label stale.
+- **Maths detection is heuristic.** `$…$` follows the usual markdown-maths rule, so prose such as
+  `costs $5 and $10` stays text, but an unusual span (a `$` directly before a digit to close) is
+  shown as plain text. Bank prompts use `$…$` consistently, and KaTeX errors render in place
+  (`throwOnError: false`) instead of breaking the item.
