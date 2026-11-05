@@ -144,12 +144,59 @@ chrome.storage.onChanged.addListener((changes, area) => {
   }
 });
 
+// ---------- v4: open or focus the Prep page ----------
+
+// One prep.html tab for both the side panel's 📚 button and the overlay's "Take me to Prep"
+// (both send { type: "AM_OPEN_PREP" }). Requests are serialized through a promise chain, so a
+// double click cannot query before the first create lands and open a second tab. The URL never
+// carries a query: a prep.html?fixture=1 tab opened by hand still counts as the Prep tab.
+let prepOpenChain = Promise.resolve();
+function prepOpenTab() {
+  const run = prepOpenChain.then(prepOpenTabNow);
+  prepOpenChain = run.catch(() => {});
+  return run;
+}
+
+// A tab that is still loading reports its target only in pendingUrl.
+function prepIsPrepTab(tab, url) {
+  return [tab.url, tab.pendingUrl].some((u) => typeof u === "string" && u.startsWith(url));
+}
+
+async function prepOpenTabNow() {
+  const url = chrome.runtime.getURL("prep.html");
+  const tabs = await chrome.tabs.query({});
+  const existing = tabs.find((t) => prepIsPrepTab(t, url));
+  let tabId;
+  let created;
+  if (existing) {
+    await chrome.tabs.update(existing.id, { active: true });
+    await chrome.windows.update(existing.windowId, { focused: true });
+    tabId = existing.id;
+    created = false;
+  } else {
+    const tab = await chrome.tabs.create({ url });
+    tabId = tab.id;
+    created = true;
+  }
+  amLog("prep", "open", { created });
+  return { tabId, created };
+}
+
 // Content scripts relay their log entries here so a single writer owns the
 // amLogs_content key — concurrent tabs doing read-modify-write clobbered each other.
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (msg?.type === "AM_LOG" && msg.entry) {
     amLogStore("amLogs_content", msg.entry);
     sendResponse(true); // ack, or the sender's callback sees a port-closed error and double-writes
+  }
+  if (msg?.type === "AM_OPEN_PREP") {
+    prepOpenTab().then(
+      ({ tabId, created }) => sendResponse({ ok: true, tabId, created }),
+      (e) => {
+        amLog("prep", "open-failed", { error: String(e).slice(0, 200) });
+        sendResponse({ ok: false, error: String(e) });
+      });
+    return true; // keep the channel open for the async response
   }
 });
 

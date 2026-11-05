@@ -232,6 +232,35 @@ a {
   font-size: 16px;
 }
 
+/* Buddy drill (§J3): shown at the top of Today only while a drill is pending. */
+.drill-card {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px 16px;
+  border-color: #3b4a7a;
+  border-left: 3px solid #5b7cfa;
+}
+
+.drill-main {
+  flex: 1 1 260px;
+  min-width: 0;
+}
+
+.drill-banner {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.drill-note {
+  margin: 4px 0 0;
+}
+
+.summary-drill {
+  margin: 8px 0 0;
+}
+
 .today-due {
   margin: 4px 0;
   font-size: 15px;

@@ -1036,6 +1036,68 @@ marked in `V4-CONTRACTS.md`)
   `dashboard:render`, `library:render`, `library:missing` (no `library/index.json`) and
   `library:practice`. (§A5, §J1)
 
+**M7: prep.html buddy drills** (`prep-ui.js`, `prep.css`; implementer choices, not marked in
+`V4-CONTRACTS.md`)
+
+- **Banner.** `#drill-banner` holds exactly `drillBannerText(drill)`. `button#drill-start` and a
+  progress line (`n of N done so far`, shown once `done > 0`) sit beside it in one card at the top
+  of Today, and the card and the banner are both hidden unless `prepDrill.status === "pending"`.
+  The Today render and the `storage.onChanged` listener both render it, and a change that lands
+  while a Today read is in flight wins over that read. (§I, §J3)
+- **Start.** `#drill-start` re-reads `prepDrill` and, if it is still pending, shows the Practice
+  tab with the drill session, which replaces any Practice session (also one still starting). A
+  drill that is no longer pending only refreshes the banner (`drill:start-skipped`). (§J3)
+- **Queue.** `drillQueue(items, cards, now, { ...stored drill, topics: kept })`, where `kept` is
+  the stored topics that are in `topicSet(items)` of the whole bank. The count is the stored
+  `count` even when an earlier session already advanced the drill, so a resumed drill shows a fresh
+  queue of `count` items. Once the drill is done, the rest of that session is ordinary practice and
+  writes nothing to `prepDrill`. Dropped topics are named in the session title and logged
+  (`drill:topics-dropped`). (§D7, §H9)
+- **Progress.** After each answer's history write (in the same write step, after the practice-log
+  upsert) the page re-reads `prepDrill` and writes `drillAdvance(stored, answerOk(entry), entry.ts)`,
+  only while the stored drill has the session's id and is pending. (§H9, §I)
+- **Finish.** Advancing past the last item with the drill still pending writes
+  `drillFinish(stored, Date.now())` ("the queue ran out before count", including skipped broken
+  items). An empty queue finishes it at session start. **End session leaves the drill pending**,
+  because §H9 uses `drillFinish` only for a queue that runs out; the user can start it again from
+  Today. (§H9)
+- **Summary.** A drill session's summary adds one line: `drillPromptLine` (the line the buddy
+  reads) when the drill is done, how far it got when it is still pending, or a note that a newer
+  drill replaced it. Logs: `drill:start`, `drill:progress`, `drill:done` (with `how`:
+  `progress`, `finish-early` or `finish-empty`). (§H9)
+
+**M7: side panel Prep integration** (`sidepanel.js`, `sidepanel.html`; implementer choices, not
+marked in `V4-CONTRACTS.md`)
+
+- **The bank load is awaited, not raced.** Init starts `prepLoadBank` first thing (in parallel
+  with the v3 init) and keeps its promise in `prepLoading`; the check-in, every request's prompt
+  parts and `assign_drill` await it before reading `prepData`. So the first request after opening
+  the panel already sees the bank, and the race §E6 tolerates does not happen. The load never
+  rejects, so the wait is bounded by reading a few extension files. Logs: `prep:bank-loaded`,
+  `prep:bank-missing`, `prep:bank-load-failed`. (§E6, §H7)
+- **The Prep line is always in the prompt.** With no bank it still prints (item areas `n/a`,
+  `due today 0`, `weakest: none`; coding, mental, oa, market and mocks still score from their own
+  data), so the buddy always sees the same line shape. Storage values of the wrong type count as
+  missing, as on the Dashboard. If computing the prep parts throws, the request goes out without
+  them and `prep:prompt-failed` is logged; a failed Sunday line falls back to the v3 trigger text
+  (`prep:weekly-failed`). (§H7, §H8)
+- **Material placement.** The `## Material:` block follows the interviewer prompt's
+  "Interview elapsed … Verdict key" line, so the v3 interviewer text stays first and intact. It is
+  computed per request (§H7), so the interview's end request carries it too, and an item answered
+  in Prep during the interview can change it. (§H6)
+- **`assign_drill` errors.** A rejected entry returns `error: <amDrillEntry error>` and logs
+  `drill:rejected`; a storage write failure returns an `error:` result and logs
+  `drill:store-failed`. The chat shows the tool result in the usual 🧠 receipt. The log
+  `drill:assigned` carries `id`, `area`, `topics`, `count` and whether the topics were checked
+  against a bank. The tool and `topics` descriptions tell the model to use bank topics and that a
+  new drill replaces the pending one. (§J8)
+- **📚.** It is the first button in `.header-right` and is wired at the very start of init, so it
+  works before init finishes. Its look (the same as 📥 and 🔄) comes from a small `<style>` block in
+  `sidepanel.html`, so `styles.css` is unchanged. If the background does not answer `ok`, the chat
+  shows an error note and `prep:open-request-failed` is logged. (§J8, §J10)
+- **Behaviour text.** The system prompt's Behaviour section gains one sentence: quant prep lives
+  in Prep (📚), its answers log themselves, and `assign_drill` sets targeted prep. (§9 F7)
+
 ## 2. Violations
 
 (none yet)
@@ -1419,3 +1481,26 @@ regexes and the §M4 steps as written)
   user lands in Prep either way, and nothing about the distraction site is unblocked.
 - **A hand-opened `prep.html?fixture=1` tab is reused.** The match is a URL prefix, as §J10 says,
   so 📚 can focus a fixture tab instead of opening the real bank. Only a developer opens that URL.
+
+**M7: prep.html buddy drills**
+
+- **A resumed drill does not continue where it stopped.** A drill left pending by End session (or
+  a closed tab) keeps its `done` and `correct`, but starting it again builds a fresh `drillQueue`
+  of `count` items, so the drill completes partway through that session and the remaining items
+  count only as practice. Slicing the queue to `count - done` would end sooner but would no longer
+  be the §H9 queue of the stored drill.
+- **End session does not close the drill.** The drill stays pending (and on the Today banner and
+  in the buddy's prompt) until it is finished from Today or replaced by a new `assign_drill`.
+
+**M7: side panel Prep integration**
+
+- **The first request waits for the bank.** Requests await the init bank load, so the first
+  message after opening the panel can wait for the bank fetch (a few MB of extension files, tens
+  of milliseconds). Not waiting would send that request without item scores, topic checks or
+  material.
+- **The bank is loaded once per panel.** Each open panel holds its own copy in memory, and a
+  `bank:build` while the panel is open shows up only after the panel is reopened (the prep keys,
+  in contrast, are read fresh on every request).
+- **Interview material can change mid-interview.** It is recomputed on every request (§H7), so
+  an item answered in Prep during a mock can drop out of the list. The interviewer always quizzes
+  the current weakest items, at the cost of a list that is not fixed for the whole mock.

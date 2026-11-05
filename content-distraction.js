@@ -67,6 +67,8 @@ function buildOverlay(info) {
       .go:hover { background: #5c7cff; }
       .go.zetamac { background: #2fbf71; color: #0f1117; }
       .go.zetamac:hover { background: #45dd8b; }
+      .go.prep { background: #f2b33d; color: #0f1117; }
+      .go.prep:hover { background: #ffc85c; }
       .snooze { background: #1c2030; color: #8b93a7; border: 1px solid #2b3145; }
       .snooze:hover { background: #262b3d; }
       .host { font-size: 12px; color: #5a627a; margin-top: 18px; }
@@ -79,8 +81,9 @@ function buildOverlay(info) {
         <div class="target">${escapeHtml(targetLine)}</div>
         ${dueLine}
         <div class="actions">
-          <button class="go">Take me to LeetCode</button>
+          <button class="go leetcode">Take me to LeetCode</button>
           <button class="go zetamac">Take me to Zetamac</button>
+          <button class="go prep">Take me to Prep</button>
           <button class="snooze">1 hour of weakness</button>
         </div>
         <div class="host">Accountability Machine · dismiss cools down for 1h on this site</div>
@@ -88,13 +91,23 @@ function buildOverlay(info) {
     </div>
   `;
 
-  shadow.querySelector(".go:not(.zetamac)").addEventListener("click", () => {
+  shadow.querySelector(".go.leetcode").addEventListener("click", () => {
     amLog("distraction", "go-to-leetcode", { host });
     window.location.href = "https://leetcode.com/problemset/";
   });
   shadow.querySelector(".go.zetamac").addEventListener("click", () => {
     amLog("distraction", "go-to-zetamac", { host });
     window.location.href = "https://arithmetic.zetamac.com/";
+  });
+  // prep.html is an extension page and this context cannot use chrome.tabs, so the
+  // background opens it (or focuses the one already open). This tab stays where it is.
+  shadow.querySelector(".go.prep").addEventListener("click", () => {
+    if (orphaned()) { disarm(); return; } // a reloaded extension cannot be messaged
+    amLog("distraction", "go-to-prep", { host });
+    chrome.runtime.sendMessage({ type: "AM_OPEN_PREP" }, (res) => {
+      const error = chrome.runtime.lastError?.message || (res?.ok ? null : res?.error || "no response");
+      if (error) amLog("distraction", "open-prep-failed", { host, error: String(error).slice(0, 200) });
+    });
   });
   shadow.querySelector(".snooze").addEventListener("click", async () => {
     const { amDistractionCooldown } = await chrome.storage.local.get("amDistractionCooldown");

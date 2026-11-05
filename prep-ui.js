@@ -11,6 +11,8 @@
 // seeded market-making game, its round table, fills and settlement, and the mmRuns write). M6: the
 // Dashboard (area scores and their trend, NeetCode 150, the mistakes journal, checkpoint, under
 // 60, mock verdicts) and the Library (library/index.json, item counts, practice from a source).
+// M7: the Today tab's buddy drill banner (prepDrill, kept live by storage changes) and drill
+// sessions in the Practice tab, which advance and finish the stored drill (§H9).
 // Each tab's content is rendered by RENDER[<tab id>].
 // Every prep/*.js module is optional here (checked with typeof): a tab whose modules did not
 // load says so instead of rendering, and the page still reaches ready.
@@ -498,10 +500,11 @@
     const sess = {
       kind: spec.kind, ids: built.ids, areas: built.areas, pos: 0, startTs: now,
       acc: { probItems: 0, cppSecs: 0 }, entries: [], mistakes: [], cards, ended: false, note,
+      drillId: spec.drillId || null,
     };
     v.sess = sess;
     v.cur = null;
-    v.title.textContent = spec.title;
+    v.title.textContent = built.title || spec.title;
     v.summaryEl.hidden = true;
     v.summaryEl.replaceChildren();
     amLog("session", "start", { scope: v.scope, kind: sess.kind, items: sess.ids.length });
@@ -513,6 +516,8 @@
       v.progress.textContent = "";
       v.emptyEl.textContent = built.emptyText;
       v.emptyEl.hidden = false;
+      // §H9: an empty drill queue finishes the drill at once.
+      if (sess.drillId) queueWrite("drill", () => updateDrill(sess.drillId, d => R.drillFinish(d, now), "finish-empty"));
       return;
     }
     v.emptyEl.hidden = true;
@@ -788,6 +793,8 @@
         await store.set({ practiceLog: log });
       }
       amLog("answer", "saved", { itemId: item.id, mode: entry.mode, grade: entry.grade, secs: entry.secs, mistake: !!mistake });
+      // §H9: a drill session counts each answer once, with ok = answerOk(history entry).
+      if (sess.drillId) await updateDrill(sess.drillId, d => R.drillAdvance(d, S.answerOk(entry), entry.ts), "progress");
     });
   }
 
@@ -804,13 +811,15 @@
       sess.pos += 1;
       showItem(v);
     } else {
-      endSession(v);
+      endSession(v, true);
     }
   }
 
-  // Ends the session (after its last item, or End session) and shows the summary once this
-  // session's writes have landed, so the due-tomorrow count sees its cards.
-  async function endSession(v) {
+  // Ends the session (`exhausted`: advanced past its last item; otherwise End session) and shows
+  // the summary once this session's writes have landed, so the due-tomorrow count sees its cards.
+  // A drill whose queue ran out before its count is finished here (§H9); End session leaves it
+  // pending, so it can be started again from Today.
+  async function endSession(v, exhausted = false) {
     const sess = v.sess;
     if (!sess || sess.ended) return;
     sess.ended = true;
@@ -820,8 +829,11 @@
     v.itemEl.replaceChildren();
     v.endBtn.hidden = true;
     v.progress.textContent = "";
+    if (sess.drillId && exhausted) {
+      queueWrite("drill", () => updateDrill(sess.drillId, d => R.drillFinish(d, Date.now()), "finish-early"));
+    }
     await writeChain;
-    const { prepCards } = await store.get("prepCards");
+    const { prepCards, prepDrill } = await store.get(["prepCards", "prepDrill"]);
     if (v.sess !== sess) return; // a new session started meanwhile
     const now = Date.now();
     const answered = sess.entries.length;
@@ -846,6 +858,7 @@
         stat("Due tomorrow", String(dueTomorrow))),
       h("p", { class: "summary-weakest-line" }, "Weakest topics: ",
         h("span", { "data-role": "summary-weakest", text: weakest.length ? weakest.join(", ") : "none" })),
+      sess.drillId ? drillSummaryLine(sess.drillId, prepDrill, now) : null,
       v.defaultSpec
         ? h("div", { class: "row" }, h("button", {
           type: "button", class: "btn btn-primary", text: "Start a new session",
@@ -854,6 +867,19 @@
         : null);
     el.hidden = false;
     amLog("session", "end", { scope: v.scope, kind: sess.kind, answered, correct, secs, dueTomorrow });
+  }
+
+  // The drill's outcome under a drill session's summary: the line the buddy reads (§H9
+  // drillPromptLine) once it is done, or how far it got when End session left it pending.
+  function drillSummaryLine(drillId, drill, now) {
+    if (!isObj(drill) || drill.id !== drillId) {
+      return h("p", { class: "summary-drill muted", text: "This is no longer the current buddy drill (it was replaced or cleared), so these answers did not count towards one." });
+    }
+    if (drill.status === "done") {
+      const line = R.drillPromptLine(drill, now) || `Buddy drill finished: ${drill.done}/${drill.count} items, ${drill.correct} correct.`;
+      return h("p", { class: "summary-drill" }, line, h("span", { class: "muted", text: " Your buddy sees this in its next reply." }));
+    }
+    return h("p", { class: "summary-drill muted", text: `The buddy drill is still pending (${drill.done} of ${drill.count} done). Start it again from the Today tab.` });
   }
 
   // ---------- mistake note (§J2, §I) ----------
@@ -950,27 +976,41 @@
   // Tab renderers, awaited each time a tab is shown.
   const RENDER = {};
 
-  // Today: the due count and the settings (§J3). The drill banner arrives with M7.
+  // Today: the buddy drill banner, the due count and the settings (§J3).
   let today = null;
   RENDER.today = async panelEl => {
     const miss = missingFor(["PrepBank", "PrepSrs"]);
     if (miss.length) return renderMissing(panelEl, miss);
     if (!today) today = buildToday(panelEl);
-    const st = await store.get(["prepCards", "prepSettings"]);
+    const seq = drillSeq;
+    const st = await store.get(["prepCards", "prepSettings", "prepDrill"]);
     const due = S.dueCount(items(), isObj(st.prepCards) ? st.prepCards : {}, S.localDayStart(Date.now(), 1));
     today.due.dataset.count = String(due);
     today.due.textContent = `Due today: ${due}`;
     fillSettings(S.normalizeSettings(st.prepSettings));
+    if (seq === drillSeq) renderDrill(st.prepDrill);
   };
 
   function buildToday(panelEl) {
     const t = {};
+    // §J3: #drill-banner holds exactly drillBannerText(drill); the start button and the progress
+    // line sit beside it in the same card, which is shown only while the drill is pending.
+    t.drillBanner = h("p", { id: "drill-banner", class: "drill-banner", hidden: true });
+    t.drillNote = h("p", { class: "drill-note muted small", hidden: true });
+    t.drillStart = h("button", {
+      type: "button", id: "drill-start", class: "btn btn-primary", text: "Start drill",
+      title: "Run the drill in the Practice tab", onclick: startDrill,
+    });
+    t.drillCard = h("section", { class: "card drill-card", hidden: true, "aria-label": "Buddy drill" },
+      h("div", { class: "drill-main" }, t.drillBanner, t.drillNote),
+      t.drillStart);
     t.due = h("p", { id: "today-due", class: "today-due" });
     t.newPerDay = h("input", { id: "settings-new-per-day", type: "number", min: 0, max: 200, step: 1, inputmode: "numeric" });
     t.reviewCap = h("input", { id: "settings-review-cap", type: "number", min: 0, max: 1000, step: 1, inputmode: "numeric" });
     t.areaBoxes = B.AREAS.map(a => h("input", { type: "checkbox", class: "settings-area", value: a, id: `settings-area-${a}` }));
     t.status = h("p", { class: "muted small", role: "status" });
     panelEl.replaceChildren(
+      t.drillCard,
       h("section", { class: "card" },
         h("h2", { text: "Today" }),
         t.due,
@@ -1011,6 +1051,86 @@
       ? `Saved, but ${kept.join(" and ")} (whole numbers in range only).`
       : "Saved. New sessions use these settings.";
     amLog("settings", "saved", settings);
+  }
+
+  // ---------- buddy drills (spec §9 F7, §H9, §I, §J3) ----------
+
+  // prepDrill is written by the side panel (assign_drill) and by this page. Every change
+  // re-renders the banner; drillSeq lets a Today render whose read started before a change drop
+  // its now stale value.
+  let drillSeq = 0;
+  const isPendingDrill = d => isObj(d) && d.status === "pending";
+
+  function renderDrill(drill) {
+    if (!today) return;
+    const pending = !!R && isPendingDrill(drill);
+    today.drillCard.hidden = !pending;
+    today.drillBanner.hidden = !pending;
+    today.drillBanner.textContent = pending ? R.drillBannerText(drill) : "";
+    const done = pending && Number.isInteger(drill.done) && drill.done > 0 ? drill.done : 0;
+    today.drillNote.hidden = !done;
+    today.drillNote.textContent = done
+      ? `${done} of ${drill.count} done so far, ${Number.isInteger(drill.correct) ? drill.correct : 0} correct. Starting again runs a fresh queue.`
+      : "";
+  }
+
+  function onDrillStorage(changes, area) {
+    if (area !== "local" || !own(changes, "prepDrill")) return;
+    drillSeq += 1;
+    renderDrill(changes.prepDrill.newValue);
+  }
+
+  // #drill-start: re-reads the drill, then runs it in the Practice tab, replacing any Practice
+  // session (§J3). A drill finished or replaced meanwhile only refreshes the banner.
+  async function startDrill() {
+    const seq = drillSeq;
+    const { prepDrill } = await store.get("prepDrill");
+    if (seq === drillSeq) renderDrill(prepDrill);
+    if (!R || !isPendingDrill(prepDrill)) {
+      amLog("drill", "start-skipped", { reason: R ? "not-pending" : "no-readiness" });
+      return;
+    }
+    amLog("drill", "start", { id: prepDrill.id, area: prepDrill.area, topics: prepDrill.topics, count: prepDrill.count, done: prepDrill.done });
+    pendingPractice = drillSpec(prepDrill);
+    await showTab("practice");
+  }
+
+  // §H9: drillQueue of the stored drill with its topics filtered against this bank's topicSet; if
+  // none remain the drill runs area-only. The stored prepDrill keeps its topics (and label).
+  function drillSpec(drill) {
+    const label = R.drillBannerText(drill);
+    return {
+      kind: "drill",
+      title: label,
+      drillId: drill.id,
+      build: ({ cards, now }) => {
+        const known = B.topicSet(items());
+        const asked = asList(drill.topics);
+        const topics = asked.filter(t => known.includes(t));
+        const dropped = asked.filter(t => !known.includes(t));
+        if (dropped.length) amLog("drill", "topics-dropped", { id: drill.id, dropped, kept: topics });
+        const ids = S.drillQueue(items(), cards, now, { ...drill, topics });
+        const where = typeof drill.area === "string" ? drill.area : "any area";
+        return {
+          ids,
+          areas: [...new Set(ids.map(id => byId[id].area))],
+          title: dropped.length
+            ? `${label} (not in this bank: ${dropped.join(", ")}${topics.length ? "" : `, so any ${where} item counts`})`
+            : label,
+          emptyText: `No bank item matches this drill (${where}${topics.length ? ` · ${topics.join(", ")}` : ""}), so it is marked finished with nothing done.`,
+        };
+      },
+    };
+  }
+
+  // Applies fn to the stored drill, only while it is still this session's drill and pending
+  // (§I: a newer assign_drill replaces it, and a finished drill is never changed again).
+  async function updateDrill(drillId, fn, event) {
+    const { prepDrill } = await store.get("prepDrill");
+    if (!isPendingDrill(prepDrill) || prepDrill.id !== drillId) return;
+    const next = fn(prepDrill);
+    await store.set({ prepDrill: next });
+    amLog("drill", next.status === "done" ? "done" : event, { id: drillId, done: next.done, correct: next.correct, count: next.count, how: event });
   }
 
   // Practice: auto-starts a session whenever the tab is shown and none is active (§J2); the
@@ -2328,6 +2448,7 @@
       amLog("prep", "params", { item: URL_ITEM, source: URL_SOURCE, mistake: URL_MISTAKE_TS, seed: URL_SEED });
       wireTabs();
       chrome.storage.onChanged.addListener(onDashStorage);
+      chrome.storage.onChanged.addListener(onDrillStorage);
       $("#tabs").hidden = false;
       await showTab(initialTab());
     } else {

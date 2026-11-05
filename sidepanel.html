@@ -3,11 +3,25 @@
 <head>
   <meta charset="utf-8">
   <link rel="stylesheet" href="styles.css">
+  <style>
+    /* v4 📚 button: the same look as #syncBtn / #pullBtn in styles.css. */
+    #prepBtn {
+      width: 28px;
+      height: 28px;
+      border: 1px solid #2b3145;
+      border-radius: 8px;
+      background: #161a24;
+      cursor: pointer;
+      font-size: 13px;
+    }
+    #prepBtn:hover { background: #1f2534; }
+  </style>
 </head>
 <body>
   <div class="header">
     <h3>Accountability Machine</h3>
     <div class="header-right">
+      <button id="prepBtn" title="Open Prep">📚</button>
       <button id="pullBtn" title="Pull my current LeetCode attempt (code + failed tests) into the buddy's context">📥</button>
       <button id="syncBtn" title="Sync LeetCode stats now">🔄</button>
       <div class="streak-badge" id="streakBadge" title="Current streak">🔥 0</div>
@@ -89,6 +103,11 @@
   <script src="log.js"></script>
   <script src="shared.js"></script>
   <script src="practice.js"></script>
+  <script src="prep/answer.js"></script>
+  <script src="prep/bank.js"></script>
+  <script src="prep/srs.js"></script>
+  <script src="prep/readiness.js"></script>
+  <script src="prep-loader.js"></script>
   <script src="sidepanel.js"></script>
 </body>
 </html>

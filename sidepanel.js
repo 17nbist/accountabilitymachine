@@ -145,6 +145,26 @@ const TOOLS = [
       },
     },
   },
+  {
+    type: "function",
+    function: {
+      name: "assign_drill",
+      description: "Assign a focused drill of quant-prep bank items that the user does in Prep (📚): count items from one area, optionally narrowed to bank topics. Use it when they ask for targeted practice, or to hit the weakest topics or a low area score from the Prep line. One pending drill at a time: a new one replaces it. The Prep line reports the drill as pending, then as finished with the score. Don't ask permission.",
+      parameters: {
+        type: "object",
+        properties: {
+          area: { type: "string", enum: ["probability", "brainteaser", "statistics", "finance", "cpp", "systems"] },
+          topics: {
+            type: "array",
+            items: { type: "string" },
+            description: "optional bank topics in lowercase-kebab, e.g. conditional or move-semantics; omit for the whole area",
+          },
+          count: { type: "integer", minimum: 1, maximum: 50 },
+        },
+        required: ["area", "count"],
+      },
+    },
+  },
 ];
 
 const OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions";
@@ -186,7 +206,7 @@ const els = {};
  "memoryView", "clearMemoryBtn", "logsSection", "logView", "refreshLogsBtn",
  "copyLogsBtn", "clearLogsBtn", "nudgeEnabled", "nudgeHour", "interviewBtn",
  "interviewBanner", "pullBtn", "interviewMode", "resetPlanBtn",
- "noaiPrompt", "noaiTitle", "noaiYes", "noaiNo"]
+ "noaiPrompt", "noaiTitle", "noaiYes", "noaiNo", "prepBtn"]
   .forEach(id => els[id] = document.getElementById(id));
 
 let state = {
@@ -211,6 +231,11 @@ let interviewStart = null;
 let interviewTimer = null;
 let problemContext = null; // harvested LeetCode attempt (Phase E layer 1)
 let harvestBlocked = false; // true when on a problem tab but the content script didn't answer
+// v4 (V4-CONTRACTS §E6): the bank the panel scores against, loaded once at init through
+// prepLoadBank; null means no bank (item-based scores are null, drill topics go unchecked).
+// prepLoading is that load's promise (it never rejects), so the first request can wait for it.
+let prepData = null;
+let prepLoading = null;
 
 function daysSinceStart() {
   if (!state.startDate) return 1; // another context may have written state before init finished
@@ -654,7 +679,8 @@ rule #1's assisted-solve protocol applies if they insist.`;
   return "";
 }
 
-function buildSystemPrompt(tabContext) {
+// `prep` is prepPromptParts' result, read fresh for this request: { line, drill, material }.
+function buildSystemPrompt(tabContext, prep = {}) {
   const facts = Object.entries(state.memory.facts)
     .map(([k, v]) => `- ${k}: ${v}`).join("\n") || "(none yet)";
   const solvedToday = todaysSolves();
@@ -667,9 +693,11 @@ function buildSystemPrompt(tabContext) {
     ? `## Re-solve queue (spaced repetition — hold him to these BEFORE new problems)\n` +
       due.slice(0, 8).map(d => `- ${d.title} (first solved ${ago(d.first)})`).join("\n")
     : "";
+  // The quantdev / trader material block (§H6) goes after the interviewer prompt, which stays first.
   const interviewBlock = interviewActive
     ? `${AM_INTERVIEW_MODES[interviewMode].prompt}\n\nInterview elapsed: ` +
-      `${Math.round((Date.now() - interviewStart) / 60000)} min. Verdict key for today: ${amInterviewKey(interviewMode)}.`
+      `${Math.round((Date.now() - interviewStart) / 60000)} min. Verdict key for today: ${amInterviewKey(interviewMode)}.` +
+      (prep.material ? `\n\n${prep.material}` : "")
     : "";
   const z = amZetamacStats(practiceLog);
   const zLine = z.count
@@ -682,7 +710,9 @@ function buildSystemPrompt(tabContext) {
     : "Next checkpoint: none left — the plan needs new dated checkpoints (update_plan).";
   const practiceBlock =
     `## Practice tracks (leetcode + zetamac auto-captured; log_practice for the rest)\n` +
-    `${amTodayLine(todayTotals(), target)}\n${zLine}\n${amSolveTimeLine(amMedianMediumSecs(lcSolves), timedMediums)}\n${cpLine}`;
+    `${amTodayLine(todayTotals(), target)}\n${zLine}\n${amSolveTimeLine(amMedianMediumSecs(lcSolves), timedMediums)}\n${cpLine}` +
+    (prep.line ? `\n${prep.line}` : "") +
+    (prep.drill ? `\n${prep.drill}` : "");
   return [
     interviewActive ? interviewBlock : (PERSONALITIES[state.personality] || PERSONALITIES.coach),
     PROFILE,
@@ -713,7 +743,10 @@ function buildSystemPrompt(tabContext) {
     `## Behaviour\nUse your tools proactively — when the user reveals anything durable, call remember ` +
       `right away without asking. When they mention practice on another track (Green Book problems, ` +
       `C++ or project minutes, a mock done), call log_practice immediately — never log LeetCode or ` +
-      `Zetamac by hand, those are captured automatically. When they ask for a problem to solve: re-solve queue items come ` +
+      `Zetamac by hand, those are captured automatically. Quant prep (probability, brainteasers, stats, ` +
+      `finance, C++ and systems cards, OA drills, the market game) lives in Prep, the 📚 button; its answers ` +
+      `log themselves, and the Prep line above has the scores. To set targeted prep, call assign_drill ` +
+      `(the weakest topics are good picks). When they ask for a problem to solve: re-solve queue items come ` +
       `FIRST (use open_problem with the slug); once the queue is clear, call pick_problem with ` +
       `difficulty and topic tags chosen from the plan phase, their weak topics, and recent solves — ` +
       `never invent a problem from memory. After picking, offer open_problem. ` +
@@ -808,6 +841,8 @@ async function execTool(name, args) {
       renderBanner();
       return `logged ${entry.amount} ${entry.unit} on ${entry.track}${entry.note ? ` — ${entry.note}` : ""}`;
     }
+    case "assign_drill":
+      return prepAssignDrill(args);
     default:
       return `unknown tool: ${name}`;
   }
@@ -960,8 +995,9 @@ async function sendMessage(trigger) {
   try {
     await autoHarvestActiveTab();
     const tabContext = await getTabContext();
+    const prep = await prepPromptParts(Date.now());
     const msgs = [
-      { role: "system", content: buildSystemPrompt(tabContext) },
+      { role: "system", content: buildSystemPrompt(tabContext, prep) },
       ...contextMessages(),
     ];
     amLog("chat", "request", {
@@ -1212,6 +1248,7 @@ async function maybeDailyCheckin() {
         resolveDebt: reSolveQueue().length,
         checkpoint: amNextCheckpoint(AM_CHECKPOINTS),
         solvedTotal: lcStats?.solved?.All ?? null,
+        prep: await prepWeeklyText(Date.now()),
       })
     : "[Automatic daily check-in — greet me for the day. Reference my streak, whether yesterday " +
       "was done, and anything due in the re-solve queue, then get me to commit to today's target. " +
@@ -1301,9 +1338,138 @@ async function noAIAnswer(noAI) {
   }
 }
 
+// ---------- Prep integration (v4) ----------
+// The panel scores against prepData, loaded once at init, and reads the prep keys from storage
+// on every request without caching them (V4-CONTRACTS §H7 "Freshness"). So an answer or a
+// finished drill in prep.html a moment ago is already in the next system prompt.
+
+const prepPromptKeys = ["prepCards", "prepHistory", "prepMistakes", "prepDrill", "oaRuns", "mmRuns"];
+const prepMaterialModes = ["quantdev", "trader"]; // the interviews that get bank material (§H6)
+
+// ?fixture=1 on the panel's own URL loads the synthetic test bank (e2e only; production never
+// has it). Never rejects: any failure leaves prepData null, which means "no bank".
+async function prepInitBank() {
+  try {
+    const fixture = new URLSearchParams(location.search).get("fixture") === "1";
+    prepData = await prepLoadBank({ fixture });
+    if (prepData) amLog("prep", "bank-loaded", { source: prepData.source, items: prepData.items.length });
+    else amLog("prep", "bank-missing", { fixture });
+  } catch (e) {
+    prepData = null;
+    amLog("prep", "bank-load-failed", { error: String(e?.message || e).slice(0, 200) });
+  }
+}
+
+// Everything that reads prepData waits for the init load first, so the first request (or a
+// tool call made before the load lands) never sees "no bank" by accident.
+async function prepBankReady() {
+  if (prepLoading) await prepLoading;
+}
+
+// Storage values of the wrong type count as missing, as on the prep.html Dashboard.
+function prepList(v) {
+  return Array.isArray(v) ? v : null;
+}
+
+function prepMap(v) {
+  return v && typeof v === "object" && !Array.isArray(v) ? v : null;
+}
+
+// areaScores inputs (§H3): the prep keys just read, the panel's v3 caches for lcSolves,
+// practiceLog and facts, and the bank and NeetCode list from prepData (§E6).
+function prepScoreInputs(got) {
+  return {
+    bank: prepData ? prepData.items : null,
+    nc150: prepData ? prepData.nc150 : null,
+    cards: prepMap(got.prepCards),
+    history: prepList(got.prepHistory),
+    lcSolves,
+    practiceLog,
+    oaRuns: prepList(got.oaRuns),
+    mmRuns: prepList(got.mmRuns),
+    facts: state.memory.facts,
+  };
+}
+
+// One request's prep parts of the system prompt: the Prep line (§H7), the drill line (§H9) and,
+// only while a quantdev or trader interview runs, the material block (§H6). Any failure drops
+// the parts and logs it; the chat itself never fails on prep data.
+async function prepPromptParts(now) {
+  try {
+    await prepBankReady();
+    const got = await chrome.storage.local.get(prepPromptKeys);
+    const inputs = prepScoreInputs(got);
+    const line = PrepReadiness.prepSummaryLine({
+      scores: PrepReadiness.areaScores(inputs),
+      dueToday: PrepSrs.dueCount(inputs.bank, inputs.cards, PrepSrs.localDayStart(now, 1)),
+      weakest: PrepReadiness.weakestTopics(prepList(got.prepMistakes), inputs.bank, now, 3),
+    });
+    const drill = PrepReadiness.drillPromptLine(got.prepDrill, now);
+    const material = interviewActive && prepMaterialModes.includes(interviewMode)
+      ? PrepReadiness.interviewMaterialBlock(
+          PrepReadiness.pickInterviewMaterial(inputs.bank, inputs.cards, inputs.history, interviewMode, 3))
+      : "";
+    return { line, drill, material };
+  } catch (e) {
+    amLog("prep", "prompt-failed", { error: String(e?.message || e).slice(0, 200) });
+    return { line: "", drill: "", material: "" };
+  }
+}
+
+// The Sunday review's prep sentence (§H8), from the same fresh read. "" (the v3 trigger text)
+// if it cannot be computed.
+async function prepWeeklyText(now) {
+  try {
+    await prepBankReady();
+    const got = await chrome.storage.local.get(prepPromptKeys);
+    return PrepReadiness.prepWeeklyLine({ ...prepScoreInputs(got), now });
+  } catch (e) {
+    amLog("prep", "weekly-failed", { error: String(e?.message || e).slice(0, 200) });
+    return "";
+  }
+}
+
+// assign_drill (§J8): amDrillEntry checks the topics against the loaded bank (unchecked with no
+// bank; prep.html filters them at drill start), then the entry replaces any earlier prepDrill.
+async function prepAssignDrill(args) {
+  await prepBankReady();
+  let entry;
+  try {
+    entry = PrepReadiness.amDrillEntry(args, Date.now(), prepData ? PrepBank.topicSet(prepData.items) : null);
+  } catch (e) {
+    amLog("drill", "failed", { error: String(e?.message || e).slice(0, 200) });
+    return `error: assign_drill failed: ${String(e?.message || e).slice(0, 150)}`;
+  }
+  if (entry.error) {
+    amLog("drill", "rejected", { error: String(entry.error).slice(0, 200) });
+    return `error: ${entry.error}`;
+  }
+  try {
+    await chrome.storage.local.set({ prepDrill: entry });
+  } catch (e) {
+    amLog("drill", "store-failed", { error: String(e?.message || e).slice(0, 200) });
+    return `error: could not store the drill: ${String(e?.message || e).slice(0, 150)}`;
+  }
+  amLog("drill", "assigned", {
+    id: entry.id, area: entry.area, topics: entry.topics, count: entry.count, topicsChecked: !!prepData,
+  });
+  return `assigned drill: ${entry.count} ${PrepReadiness.drillLabel(entry)} items`;
+}
+
+// 📚: the background opens the Prep tab, or focuses the one already open (§J10).
+async function prepOpen() {
+  try {
+    const res = await chrome.runtime.sendMessage({ type: "AM_OPEN_PREP" });
+    if (!res || !res.ok) throw new Error(res?.error || "no answer from the background");
+  } catch (e) {
+    amLog("prep", "open-request-failed", { error: String(e?.message || e).slice(0, 200) });
+    note(`Couldn't open Prep: ${e?.message || e}`, "error-msg");
+  }
+}
+
 // ---------- Logs viewer ----------
 
-const LOG_KEYS = ["amLogs_panel", "amLogs_content", "amLogs_bg"];
+const LOG_KEYS = ["amLogs_panel", "amLogs_content", "amLogs_bg", "amLogs_prep"];
 
 async function loadAllLogs() {
   const got = await chrome.storage.local.get(LOG_KEYS);
@@ -1332,6 +1498,10 @@ document.addEventListener("DOMContentLoaded", async () => {
   chrome.storage.onChanged.addListener(noAIOnChanged);
   els.noaiYes.addEventListener("click", () => noAIAnswer(true));
   els.noaiNo.addEventListener("click", () => noAIAnswer(false));
+  // 📚 works from the first paint; it needs nothing that init loads.
+  els.prepBtn.addEventListener("click", prepOpen);
+  // The bank loads alongside the v3 init and is awaited before the check-in (§E6).
+  prepLoading = prepInitBank();
   const stored = await chrome.storage.local.get(["state", "lcStats", "lcSolves", "lcProblemContext", "practiceLog"]);
   if (stored.state) {
     state = { ...state, ...stored.state };
@@ -1385,6 +1555,7 @@ document.addEventListener("DOMContentLoaded", async () => {
   // reads it) reflects panel-closed days; a fresh sync below backfills again.
   await backfillFromRecent(lcStats?.recent, "init");
   await autoMarkIfTargetMet();
+  await prepLoading;
   await maybeDailyCheckin();
 
   chrome.storage.onChanged.addListener(async (changes, area) => {

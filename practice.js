@@ -243,7 +243,9 @@ function amWeekTotals(practiceLog, lcSolves, nowTs = Date.now()) {
   return totals;
 }
 
-function amWeeklyReviewTrigger({ week, streak, zetamac, medianMediumSecs, resolveDebt, checkpoint, solvedTotal }) {
+// v4: `prep` (the prepWeeklyLine) is inserted verbatim right after the checkpoint sentence,
+// only when it is a non-empty string; anything else gives the v3 text byte for byte.
+function amWeeklyReviewTrigger({ week, streak, zetamac, medianMediumSecs, resolveDebt, checkpoint, solvedTotal, prep }) {
   const totals = AM_TRACK_ORDER.map(k => amTrackPiece(k, week[k])).join(" · ");
   const z = zetamac && zetamac.count
     ? `Zetamac last games: ${zetamac.last.join(" → ")} (best ${zetamac.best}, ${zetamac.count} games logged)`
@@ -255,8 +257,9 @@ function amWeeklyReviewTrigger({ week, streak, zetamac, medianMediumSecs, resolv
     ? `Next checkpoint: ${checkpoint.due} (${checkpoint.daysLeft} days left) — ${checkpoint.label}`
     : "Next checkpoint: no dated checkpoint left in the plan";
   const total = Number.isFinite(solvedTotal) ? `LeetCode total: ${solvedTotal} solved. ` : "";
+  const prepText = typeof prep === "string" && prep.length > 0 ? `${prep} ` : "";
   return `[Automatic Sunday weekly review — run it now. Week totals: ${totals}. Streak: ${streak} day(s). ` +
-    `${total}${z}. ${solve}. Re-solve debt: ${resolveDebt} due. ${cp}. ` +
+    `${total}${z}. ${solve}. Re-solve debt: ${resolveDebt} due. ${cp}. ${prepText}` +
     `Grade the week against the next checkpoint honestly (on track / behind / ahead, and why), name ` +
     `the one thing to change next week, and call update_plan if the plan itself needs adjusting. ` +
     `Then get me to commit to today's target. Keep it under 8 sentences.]`;
