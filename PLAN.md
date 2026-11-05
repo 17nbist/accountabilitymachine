@@ -116,6 +116,73 @@ leetcode.com itself answers 403 to headless Chromium, so the LeetCode content sc
 fixture served under the real origin. The log ring buffer is per-context and read-modify-write, so
 two panels open at once (two windows) can drop each other's log entries — cosmetic, logs only.
 
+## v4.0 — quant prep (Nov 2026)
+
+Covers the quant-dev and trader side of the July 2027 window: probability and brainteasers, C++
+and systems, mental maths, OA tests, market making. Spec in `SPEC-v4.md`, interfaces in
+`V4-CONTRACTS.md`, decisions / violations / trade-offs in `BUILD-NOTES.md`, test disputes in
+`TEST-DISPUTES.md`.
+
+- [x] **Prep page** — `prep.html` + `prep.css` + `prep-ui.js`, a full-page tab opened (or focused)
+      by 📚 in the side panel header or "Take me to Prep" on the overlay. Seven tabs:
+  - **Today:** new items per day, review cap and areas, plus the buddy's drill banner.
+  - **Practice:** bank items on SM-2, KaTeX maths, source links to the PDF page. Numeric and mcq
+    answers are auto-checked; free response is self-graded Again/Hard/Good/Easy. Disputed items
+    get a banner, and "Check my reasoning" streams a critique from the configured model.
+  - **Cards:** C++ and systems decks on the same scheduler, with topic filters.
+  - **OA:** seeded timed simulators: `arith` (Zetamac clone), `eighty` (80 in 8 min), `seq`
+    (next term) and `ev` (expected-value quickfire).
+  - **Market:** a seeded market-making game (dice / cards / coins) against noise and informed bots.
+  - **Dashboard:** readiness scores 0-100 for 8 areas, NeetCode 150 by pattern, mistakes journal,
+    next checkpoint, mock verdicts.
+  - **Library:** the local PDFs.
+- [x] **Pure modules** in `prep/`. There is no `chrome.*`, DOM, clock or `Math.random`, each file has
+      one `var Prep*` global plus `module.exports` (the `practice.js` pattern), and all are
+      Node-tested. The modules: `rng` (mulberry32), `answer` (expression parser + tolerance checks),
+      `bank` (schema, validator, content-hash ids), `srs` (SM-2 + round-robin queue), `oa`,
+      `market`, `readiness` (area scores, NC150, mistakes, the prompt line, interview material,
+      drills). `prep-loader.js` loads the bank for both pages.
+- [x] **Content pipeline** — `bank-build/` → gitignored `bank/` (`npm run bank:build`). It OCRs the
+      Green Book scan. Claude Code subagents extract items per source, a blind agent re-solves
+      each one, a third adjudicates any disagreement, and Monte Carlo / enumeration scripts
+      (`python3 -I`) check numeric answers. Agents write the C++ / systems cards and a blind checker
+      reviews them. The build then assembles everything, fails on any `bankValidate` error, and
+      writes `bank/REPORT.md`. Local build: 1482 practice items, 432 cards, 0 disputed, largest
+      source 20.9%.
+- [x] **Buddy integration** — a `Prep: overall NN · prob NN · …` line in the system prompt and an
+      `assign_drill` tool. Each Accepted solve gets a "Solved without AI?" prompt
+      (`lcSolves[*].noAI`). Quantdev / trader mocks quiz the 3 weakest bank items, and the Sunday
+      review adds the week's prep totals and area-score changes. Prep writes to the existing six
+      `practiceLog` tracks and adds no new ones. The streak gate is unchanged.
+- [x] **Storage** — new keys `prepCards`, `prepHistory`, `prepMistakes`, `oaRuns`, `mmRuns`,
+      `prepSettings`, `prepDrill`, `amLogs_prep`, plus the `unlimitedStorage` permission; version 4.0.0.
+- [x] **Test-first protocol (spec §11):**
+  - **Red:** writers who saw only the spec and contracts wrote failing tests
+    (`tests/v4-*.test.js`, `e2e/v4.js` against `prep.html?fixture=1`) and the synthetic fixture
+    bank `tests/fixtures/bank-mini/`.
+  - **Hold-out:** a second, hidden suite lives outside the repo.
+  - **Lock:** `tests/`, `scripts/`, `e2e/v4.js`, `e2e/run.js` and `package.json` are locked by
+    sha256 in `tests/LOCK.json` (tag `v4-red`). A Claude Code hook denies edits to them, and
+    `lock:verify` runs in `npm run check`.
+  - **Disputes:** an implementer who thinks a test is wrong files it in `TEST-DISPUTES.md`, and a
+    judge who has never seen the implementation rules on it.
+- [x] Milestones M0 tooling · M1 rng/answer/srs/bank · M2 content pipeline · M3 Practice + Cards ·
+      M4 OA · M5 Market · M6 readiness, Dashboard, Library, no-AI prompt · M7 buddy + interviewer
+      material. M8 covers the hold-out run, the cheese audit, the 90% coverage gate and these docs.
+
+Where things live: UI in `prep.html` / `prep.css` / `prep-ui.js`, logic in `prep/*.js`, the
+pipeline in `bank-build/` (sources in `sources.json`, steps in `build.js`, helpers in `lib/`), KaTeX
+in `vendor/katex/`, and tooling (lock, hook guard, no-bank check, hold-out runner) in `scripts/`.
+`bank/` and `bank-build/.cache/` are local only and never committed.
+
+Known trade-offs (full list in `BUILD-NOTES.md` §3):
+- A fresh clone has no bank. The agent cache and the PDFs both come from copyrighted books, so
+  neither is in git, and a new machine needs the resource library plus that cache.
+- A failed rebuild removes the old bank, so Prep says "Bank not built" until the cache is fixed.
+- Item ids hash the content, so an item corrected between builds loses its SRS state.
+- The lock hook matches patterns and is not a sandbox. `lock:verify` and the git history checks
+  catch whatever it misses.
+
 ## Later / maybe
 - [ ] Auto-detect the problem *opened* (not just solved) to pre-warm interviewer context
 - [ ] Make non-LeetCode tracks gate the streak if the LeetCode-only gate gets too easy

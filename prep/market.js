@@ -21,9 +21,8 @@ var PrepMarket = (function () {
   const BOTS = Object.freeze(["noise", "informed", "mixed"]);
   const DEFAULT_MAX_POS = 10;
   const DEFAULT_MAX_WIDTH = Object.freeze({ dice: 4, cards: 8, coins: 3 });
-  // Prices within EV_EPS of the informed bot's estimate count as equal (no trade), and a quote
-  // width within EV_EPS above maxWidth counts as maxWidth (decimal inputs such as 0.7 / 3.7 give
-  // a float difference a few ulps over 3).
+  // Prices within EV_EPS of the informed bot's estimate count as equal (no trade). EV_EPS is used
+  // only there: the width check is the plain ask − bid <= maxWidth of §G3.
   const EV_EPS = 1e-9;
 
   const DECK_SIZE = 52;
@@ -209,8 +208,12 @@ var PrepMarket = (function () {
     }
     if (!(out.bid < out.ask)) return { ok: false, error: "The bid must be below the ask." };
     const width = out.ask - out.bid;
-    if (width > state.maxWidth + EV_EPS) {
-      return { ok: false, error: `The quote width ${show(width)} is above the maximum of ${show(state.maxWidth)}.` };
+    if (!(width <= state.maxWidth)) {
+      // A width a few ulps over the maximum (1.4 / 4.4 on coins) would print as the maximum
+      // itself at 12 digits, so print it in full then.
+      const max = show(state.maxWidth);
+      const w = show(width) === max ? String(width) : show(width);
+      return { ok: false, error: `The quote width ${w} is above the maximum of ${max}.` };
     }
     return { ok: true, quote: out };
   }

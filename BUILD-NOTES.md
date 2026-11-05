@@ -575,7 +575,8 @@ writers and reviewers, settled before the pre-lock tag)
 
 **M3: prep/market.js** (implementer choices, not marked in `V4-CONTRACTS.md`)
 
-- The width check allows for float noise. A quote is too wide only when
+- (Superseded by the cheese audit, §3: the width check is now the plain `ask − bid <= maxWidth`.)
+  The width check allows for float noise. A quote is too wide only when
   `ask − bid > maxWidth + EV_EPS`, so a decimal quote whose float difference lands a few ulps over
   the maximum (e.g. `10.1 / 14.1` on dice) counts as exactly `maxWidth`. `bid < ask` stays
   strict. (§G3)
@@ -661,10 +662,9 @@ not marked in `V4-CONTRACTS.md`)
   is the name up to the first hyphen (keys have none). Output is the whole stdout as JSON, else
   the last line-initial `{` from which the rest parses; `NaN` / `Infinity` read as `null`. Each
   result is compared with the item's answer after merging (resolve, audit): `enum` must match
-  exactly (relative 1e-9, absolute floor 1e-12), `mc` must be within 3 standard errors; an item
-  with an explicit `answer.tol` also passes when `checkNumeric` accepts the estimate (an
-  inherently approximate answer cannot match an exact enumeration). `mc` without a positive `se`
-  counts only as an exact match. A script that crashes, times out or prints no JSON turns every
+  exactly (relative 1e-9, absolute floor 1e-12), `mc` must be within 3 standard errors; the
+  item's `answer.tol` plays no part (spec §10.3 allows only those two, see the cheese audit in
+  §3). `mc` without a positive `se` counts only as an exact match. A script that crashes, times out or prints no JSON turns every
   result its chunk had into `ok: false`, so an old estimate never counts as a pass. The step exits
   1 on any conflict (the sim disagrees) or failure (no comparison possible, e.g. an answer that
   does not parse). Results for missing or non-numeric items are reported as orphans.
@@ -1098,6 +1098,20 @@ marked in `V4-CONTRACTS.md`)
 - **Behaviour text.** The system prompt's Behaviour section gains one sentence: quant prep lives
   in Prep (📚), its answers log themselves, and `assign_drill` sets targeted prep. (§9 F7)
 
+**M8: docs** (`PLAN.md`, `README.md`; spec §12 M8)
+
+- **README.** It gains a command table under Development (`npm test`, `test:holdout`, `e2e`,
+  `test:coverage`, `check`), a note on the test lock, setup step 4, an `assign_drill` row in the
+  tools table, and two new sections, "Prep (v4)" (📚, the seven tabs, the side-panel ties) and
+  "Building the bank (local only)". That second section covers what the build needs (the resource
+  library, `ocrmypdf`, `pdftotext` from poppler, `python3`, and the agent cache), the outputs,
+  `?fixture=1`, and the local-only copyright note. `pdftotext` is listed even though the task
+  named only `ocrmypdf` and `python3`, because the `ocr` step always runs it.
+- **PLAN.** It gains a "v4.0 — quant prep" section in the v3 style: checklist items, where things
+  live, and four known trade-offs that point to §3. The bank counts it quotes (1482 items, 432
+  cards, 0 disputed, largest source 20.9%) are numbers from `bank/REPORT.md` only. No bank text
+  goes into either file.
+
 ## 2. Violations
 
 (none yet)
@@ -1385,6 +1399,7 @@ regexes and the §M4 steps as written)
   can never be changed through a newer one and can be replayed.
 - **The width tolerance accepts a quote up to 1e-9 wider than `maxWidth`.** No user types prices
   that fine, and without it some decimal quotes at exactly the maximum width would be rejected.
+  (Superseded by the cheese audit below: the tolerance is gone.)
 
 **M3: prep/oa.js**
 
@@ -1504,3 +1519,12 @@ regexes and the §M4 steps as written)
 - **Interview material can change mid-interview.** It is recomputed on every request (§H7), so
   an item answered in Prep during a mock can drop out of the list. The interviewer always quizzes
   the current weakest items, at the cost of a list that is not fixed for the whole mock.
+
+**Cheese audit**
+
+- **Sim agreement no longer accepts the item's `answer.tol`.** `compare` (bank-build/lib/sim.js)
+  agrees only on an exact enumeration or a Monte Carlo result within 3 SE (spec §10.3), so a
+  wide-tol item off by more than that is a conflict and stays `"blind"`; the cost is that an
+  inherently approximate answer (e.g. a table value) now reports a conflict against an exact
+  enumeration until the answer or the script is fixed.
+- **The quote width check has no tolerance.** `validateQuote` / `submitQuote` (prep/market.js) reject when `!(ask − bid <= maxWidth)` exactly as §G3 says (`EV_EPS` is only for the informed bot), so `0 / 4.0000000005` on dice is now rejected; the cost is that a decimal quote whose float width lands a few ulps over the maximum (e.g. `1.4 / 4.4` on coins) is rejected too, and its error prints the width in full (`3.0000000000000004`) so it does not read "3 is above 3".

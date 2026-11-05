@@ -5,18 +5,32 @@ Chrome side-panel AI companion for interview prep, powered by OpenRouter
 LeetCode streak and solve times, captures Zetamac scores, logs probability / C++ /
 project / mock practice, runs four kinds of mock interview, sees the problem you have
 open (hints only, never solutions), notices when you're on YouTube instead — and
-maintains **its own memory of you** via tool calls.
+maintains **its own memory of you** via tool calls. v4 adds **Prep** (📚), a full-page
+quant-prep trainer: a probability and brainteaser bank on spaced repetition, C++ and systems
+cards, OA simulators, a market-making game and a readiness dashboard.
 
 ## Development
 
-No build step and no dependencies. `npm test` runs the unit tests for the pure logic in
-`practice.js` and `shared.js` (Node's built-in runner); `npm run check` syntax-checks
-every script and the manifest. `npm run e2e` launches a real Chromium with the extension
-loaded (Playwright, dev dependency) and drives it end to end: a real 30-second Zetamac game,
-the LeetCode content script on a fixture served under the real origin, the chat tool loop
-against a mocked OpenRouter stream, interview modes, Sunday review, overlay, and a sweep of
-the extension's own logs. Set `AM_HEADED=1` to watch it; screenshots and log dumps land in
-`e2e/out/`.
+The extension has no build step and no runtime dependencies. The Prep bank is built separately
+(see [Building the bank](#building-the-bank-local-only)).
+
+| Command | What it does |
+|---------|--------------|
+| `npm test` | Unit tests (Node's built-in runner): the v3 logic in `practice.js` / `shared.js`, the v4 pure modules in `prep/`, the fixture bank and the tooling |
+| `npm run test:holdout` | Runs the hidden hold-out suite from `~/Documents/Quant Prep/holdout-tests` (outside the repo; `HOLDOUT_DIR` overrides). Prints only `ok` / `not ok` test names and the totals |
+| `npm run e2e` | Real Chromium with the extension loaded (Playwright, dev dependency), driven end to end |
+| `npm run test:coverage` | `npm test` with coverage; fails below 90% line coverage of `prep/*.js` (Node 24) |
+| `npm run check` | Syntax-checks every script, parses the manifest and `package.json`, then runs `check:no-bank` and `lock:verify`; prints `check-ok` |
+
+The e2e run covers a real 30-second Zetamac game, the LeetCode content script on a fixture
+served under the real origin, the chat tool loop against a mocked OpenRouter stream, interview
+modes, Sunday review, the overlay, every Prep tab on the synthetic fixture bank
+(`prep.html?fixture=1`), and a sweep of the extension's own logs. Set `AM_HEADED=1` to watch
+it. Screenshots and log dumps land in `e2e/out/`.
+
+The tests were written before the v4 code and are locked. `tests/LOCK.json` and tag `v4-red`
+pin `tests/`, `scripts/`, `e2e/v4.js`, `e2e/run.js` and `package.json`. `lock:verify` fails on
+any change that did not go through a ruling in `TEST-DISPUTES.md` (process in `SPEC-v4.md` §11).
 
 ## Setup
 
@@ -26,6 +40,8 @@ the extension's own logs. Set `AM_HEADED=1` to watch it; screenshots and log dum
    **Load unpacked**, and select this folder.
 3. Click the extension icon to open the side panel, expand ⚙️ Settings, paste your key.
    Model and LeetCode username are pre-wired but editable.
+4. For Prep, [build the bank](#building-the-bank-local-only). Until you do, Prep shows "Bank
+   not built".
 
 ## LeetCode stats sync (three ways, all automatic-ish)
 
@@ -55,7 +71,7 @@ solve (deduped per problem per day). From that log:
 
 ## Self-editing memory
 
-The AI has four tools it calls on its own, visible as 🧠 notes in the chat:
+The AI has these tools and calls them on its own. Each call shows as a 🧠 note in the chat:
 
 | Tool | What it does |
 |------|--------------|
@@ -63,6 +79,7 @@ The AI has four tools it calls on its own, visible as 🧠 notes in the chat:
 | `update_plan` | Rewrite the training plan section of its own system prompt |
 | `edit_self_notes` | Rewrite its private coaching-strategy notes |
 | `log_practice` | Log a self-reported session on the probability / cpp / project / mock tracks |
+| `assign_drill` | Set a Prep drill (1-50 items from one area, optionally narrowed to topics); the result is reported back |
 
 Everything lives in `chrome.storage.local` — inspect or wipe it via the 🧠 Memory
 section in the panel.
@@ -89,6 +106,80 @@ LeetCode target gates the streak; the other tracks are visible pressure.
 - **Sunday review** — on Sundays the first check-in becomes a weekly review: totals per
   track, streak, Zetamac trend, median solve time, re-solve debt and the next dated
   checkpoint; the buddy calls `update_plan` if the plan needs adjusting.
+
+## Prep (v4)
+
+Click **📚** in the side panel header to open Prep in a full tab. If Prep is already open,
+it focuses that tab. The distraction overlay has a "Take me to Prep" button too. Prep shares
+`chrome.storage.local` with the side panel. It has seven tabs:
+
+- **Today** — new items per day, review cap and which areas to practise, plus the buddy's
+  drill when it has assigned one.
+- **Practice** — probability, brainteaser, statistics and finance items, one at a time, on an
+  SM-2 spaced-repetition schedule. Maths renders with KaTeX, and the source line links to the
+  PDF page. Numeric answers (with a live preview of the parsed value) and multiple-choice are
+  auto-checked. Free-response items are revealed, then you self-grade Again / Hard / Good / Easy.
+  Keys: 1-4 grade, Enter submits, Space reveals. Disputed items show a warning banner.
+  "Check my reasoning" streams a critique from your configured model but never changes the
+  grade. A summary ends each session.
+- **Cards** — C++ and systems concept decks on the same scheduler, with topic filters.
+- **OA** — four seeded, timed simulators: `arith` (Zetamac clone), `eighty` (Optiver-style,
+  80 questions in 8 minutes), `seq` (next term in a sequence) and `ev` (expected-value
+  quickfire). Each run ends with your score, best, trend and the questions you missed.
+- **Market** — a market-making game. Each round you guess fair value and quote a two-sided
+  market on a hidden dice, cards or coins total while noise and informed bots trade against
+  you. At settlement you see P&L, edge, adverse selection and fair-value errors.
+- **Dashboard** — readiness scores (0-100) for coding, probability, C++, systems, mental maths,
+  OA, market and mocks. It also shows NeetCode 150 progress per pattern, the mistakes journal
+  grouped by topic, the next checkpoint and which areas are under 60, and mock verdict scores.
+- **Library** — the local PDFs, grouped by resource folder. Each one opens in Chrome's viewer,
+  shows how many bank items cite it, and has a Practise button for those items.
+
+Prep feeds the side panel too:
+
+- The buddy's prompt gets a `Prep: overall NN · prob NN · cpp NN · sys NN · due today N ·
+  weakest: …` line.
+- After each detected Accepted solve, the panel asks "Solved without AI? Yes / No". The answer
+  feeds the coding score, and the streak ignores it.
+- Quant dev and Trader mocks quiz your three weakest bank items.
+- The Sunday review adds the week's prep totals and how each area score has changed since
+  last Sunday.
+- Prep answers count toward the existing tracks: practice items add to `probability`, time on
+  cards adds `cpp` minutes, and a default-config `arith` run logs `zetamac` with the note "in-app".
+
+## Building the bank (local only)
+
+Prep reads its content from `bank/`, which you build on your own machine:
+
+```
+npm run bank:build                          # every step: ocr extract resolve sim decks assemble report
+npm run bank:build -- sim                   # one step
+npm run bank:build -- extract greenbook     # one step, one source
+npm run bank:build -- --help                # steps and source keys
+```
+
+It needs:
+
+- the resource library at `~/Documents/Quant Prep/resources/` (`BANK_RESOURCES` overrides);
+- `ocrmypdf`, to OCR the image-only Green Book scan (the build runs `brew install ocrmypdf` if it
+  is missing), and `pdftotext` (`brew install poppler`);
+- `python3` (standard library only) for the Monte Carlo / enumeration answer checks.
+
+The scripts do not extract anything themselves. Extraction, the blind re-solves and the cards
+are written by Claude Code subagents into `bank-build/.cache/`. The build handles OCR, re-runs
+the simulations, merges, validates (any `bankValidate` error fails it), copies the library PDFs
+(the OCR'd Green Book included) into `bank/library/`, and writes `bank/bank.json`, `bank/decks/`, `bank/lists/neetcode150.json`
+and `bank/REPORT.md` (counts, acceptance checks, every corrected or disputed item). Reload Prep
+when it finishes. To try the UI without a bank, open
+`chrome-extension://<extension id>/prep.html?fixture=1`, which always loads the synthetic fixture
+bank.
+
+> **`bank/` is local only.** It holds copyrighted material: copies of the library PDFs and items
+> taken from the books. It is gitignored along with `bank-build/.cache/` and
+> `bank-build/sim/items/`, and must never be committed or pushed. `npm run check` (via
+> `check:no-bank`) fails if git tracks anything under `bank/`, any PDF, or any file over 1 MB
+> outside `vendor/` and `tests/fixtures/`. The repo holds only code, tests and the synthetic
+> fixture bank in `tests/fixtures/bank-mini/`.
 
 ## The plan (seeded, AI-maintained from there)
 

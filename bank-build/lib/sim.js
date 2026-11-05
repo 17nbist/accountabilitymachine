@@ -2,11 +2,11 @@
 // M2 sim agents wrote. Each prints one JSON object { "<locator>": { method: "enum"|"mc",
 // estimate: number, se: number|null } } on stdout. They run with `python3 -I` (stdlib only).
 //
-// An item's simulation agrees when:
+// An item's simulation agrees when (and only when):
 //   enum: the estimate equals the answer exactly (relative 1e-9, absolute floor 1e-12);
-//   mc:   the estimate is within 3 standard errors of the answer;
-//   or, for an item with an explicit answer.tol, checkNumeric accepts the estimate (an inherently
-//   approximate answer, e.g. a normal-table value, cannot match an exact enumeration exactly).
+//   mc:   the estimate is within 3 standard errors of the answer (exactly, without a positive se).
+// The item's answer.tol plays no part: it is the marking tolerance for a typed answer, not
+// evidence that the answer is right, so an estimate outside these bounds is a conflict.
 "use strict";
 
 const fs = require("node:fs");
@@ -38,11 +38,9 @@ function compareRaw(entry, item) {
   if (typeof est !== "number" || !Number.isFinite(est)) return { ok: false, kind: "error", why: entry && entry.note ? entry.note : "no finite estimate" };
   const d = Math.abs(est - exp.value);
   const exact = d <= Math.max(EXACT_ABS, EXACT_REL * Math.abs(exp.value));
-  const tolOk = item.answer.tol !== undefined && PrepAnswer.checkNumeric(String(est), item).correct === true;
   const method = entry.method;
   if (method === "enum") {
     if (exact) return { ok: true, why: "exact" };
-    if (tolOk) return { ok: true, why: "within the item's tol" };
     return { ok: false, why: `enumeration gives ${est}, the answer is ${exp.value}` };
   }
   if (method === "mc") {
@@ -50,12 +48,10 @@ function compareRaw(entry, item) {
     if (typeof se === "number" && Number.isFinite(se) && se > 0) {
       const z = d / se;
       if (z <= MC_SIGMAS) return { ok: true, why: `z = ${z.toFixed(2)}`, z };
-      if (tolOk) return { ok: true, why: `within the item's tol (z = ${z.toFixed(2)})`, z };
       return { ok: false, why: `Monte Carlo gives ${est} ± ${se}, the answer is ${exp.value} (z = ${z.toFixed(1)})`, z };
     }
-    // No usable standard error: only an exact match (or the item's tol) counts.
+    // No usable standard error: only an exact match counts.
     if (exact) return { ok: true, why: "exact (no standard error)" };
-    if (tolOk) return { ok: true, why: "within the item's tol (no standard error)" };
     return { ok: false, why: `Monte Carlo gives ${est} with no standard error, the answer is ${exp.value}` };
   }
   return { ok: false, kind: "error", why: `unknown sim method ${JSON.stringify(method)}` };
