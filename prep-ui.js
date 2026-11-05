@@ -248,6 +248,16 @@
     return el;
   }
 
+  // Plain text with $...$ maths rendered inline and no markdown: choice buttons, the answer line
+  // and the notes that quote an answer. Text without maths is set exactly as it is, so the
+  // element's textContent still equals the bank string (§J2 "Text = choices[i]").
+  function inlineMath(el, text) {
+    const { md: cut, math } = cutMath(typeof text === "string" ? text : String(text == null ? "" : text));
+    el.textContent = cut;
+    if (math.length) fillMath(el, math);
+    return el;
+  }
+
   // ---------- Check my reasoning (§J11) ----------
 
   const OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions";
@@ -556,14 +566,13 @@
         target: "_blank", rel: "noopener", title: "Open the source in the library", text: B.sourceLabel(item),
       }));
     const disputed = check.status === "disputed";
-    const banner = h("div", {
+    const banner = inlineMath(h("div", {
       class: "banner banner-warn", "data-role": "disputed", role: "note", hidden: !disputed,
-      text: disputed
-        ? `Disputed answer: the source prints ${check.printed}, but a blind re-solve got ${check.resolved}. ` +
-          `This item is marked against the printed answer, so read the solution critically.` +
-          (check.note ? ` (${check.note})` : "")
-        : "",
-    });
+    }), disputed
+      ? `Disputed answer: the source prints ${check.printed}, but a blind re-solve got ${check.resolved}. ` +
+        `This item is marked against the printed answer, so read the solution critically.` +
+        (check.note ? ` (${check.note})` : "")
+      : "");
 
     cur.result = h("div", { class: "result", "data-role": "result", "data-state": "", role: "status", "aria-live": "polite" });
     cur.autoGrade = h("span", { class: "grade-chip", "data-role": "auto-grade" });
@@ -624,9 +633,9 @@
       return h("div", { class: "answer-box" }, h("div", { class: "answer-row" }, cur.input, cur.submitBtn), cur.preview);
     }
     if (item.type === "mcq") {
-      cur.choices = asList(item.answer && item.answer.choices).map((c, i) => h("button", {
+      cur.choices = asList(item.answer && item.answer.choices).map((c, i) => inlineMath(h("button", {
         type: "button", class: "choice", "data-role": "choice", "data-index": i, onclick: () => submitMcq(v, i),
-      }, String(c)));
+      }), String(c)));
       return h("div", { class: "answer-box choices" }, cur.choices);
     }
     cur.textarea = h("textarea", {
@@ -665,11 +674,11 @@
     if (item.type === "free") {
       parts.push(h("h3", { text: "Model answer" }), rich("model-answer", item.answer.value));
     } else {
-      parts.push(h("h3", { text: "Answer" }), h("p", { class: "answer-value", text: shownAnswer(item) }));
+      parts.push(h("h3", { text: "Answer" }), inlineMath(h("p", { class: "answer-value" }), shownAnswer(item)));
     }
     parts.push(h("h3", { text: "Solution" }), rich("solution-body", item.solution));
     if (check.status === "corrected") {
-      parts.push(h("p", { class: "muted small", text: `Corrected: the source printed ${check.printed}; this item uses the re-solved ${check.resolved}.` }));
+      parts.push(inlineMath(h("p", { class: "muted small" }), `Corrected: the source printed ${check.printed}; this item uses the re-solved ${check.resolved}.`));
     }
     cur.solution.replaceChildren(...parts);
     cur.solution.hidden = false;
@@ -2191,7 +2200,8 @@
   // What the user answered, as shown in the journal: the chosen choice for an mcq index.
   function mistakeAnswer(item, ans) {
     const choices = item.type === "mcq" && item.answer && Array.isArray(item.answer.choices) ? item.answer.choices : null;
-    if (choices && Number.isInteger(ans) && ans >= 0 && ans < choices.length) return excerpt(choices[ans], 60);
+    // A choice with maths is kept whole: cutting inside $...$ would leave broken TeX.
+    if (choices && Number.isInteger(ans) && ans >= 0 && ans < choices.length) return /\$/.test(choices[ans]) ? choices[ans] : excerpt(choices[ans], 60);
     if (typeof ans === "string") return ans.trim() ? excerpt(ans, 60) : "(blank)";
     return ans == null ? "(blank)" : excerpt(String(ans), 60);
   }
@@ -2238,7 +2248,7 @@
               },
                 h("span", { class: "mistake-when muted", text: isScore(m.ts) ? shortDay(m.ts) : "?" }),
                 promptOf(item),
-                h("span", { class: "mistake-answer muted", text: `you: ${mistakeAnswer(item, m.answer)}` }),
+                inlineMath(h("span", { class: "mistake-answer muted" }), `you: ${mistakeAnswer(item, m.answer)}`),
                 note ? h("span", { class: "mistake-note", text: `Note: ${excerpt(note, 140)}` }) : null));
           }))))));
   }
