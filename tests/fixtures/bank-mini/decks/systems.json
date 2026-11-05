@@ -1,0 +1,111 @@
+{
+  "version": 1,
+  "deck": "systems",
+  "generated": "2026-11-05T00:00:00.000Z",
+  "items": [
+    {
+      "id": "fixturesys-s1-c1-2a0d0e99",
+      "source": {"key":"fixturesys","title":"Fixture Systems Notes","file":"fixture-systems.pdf","page":1},
+      "area": "systems",
+      "topics": ["cache-hierarchy"],
+      "difficulty": 1,
+      "type": "numeric",
+      "prompt": "A $32$ KiB L1 data cache uses $64$-byte lines. How many lines does it hold?",
+      "answer": {"value":"512"},
+      "solution": "$32 \\cdot 1024 / 64 = 512$.",
+      "origin": "generated",
+      "check": {"status":"agreed","method":"blind"}
+    },
+    {
+      "id": "fixturesys-s2-c1-b6b63e61",
+      "source": {"key":"fixturesys","title":"Fixture Systems Notes","file":"fixture-systems.pdf","page":2},
+      "area": "systems",
+      "topics": ["latency","clock-cycles"],
+      "difficulty": 1,
+      "type": "numeric",
+      "prompt": "A core runs at $3$ GHz. How many nanoseconds do $450$ cycles take?",
+      "answer": {"value":"150"},
+      "solution": "At $3$ GHz one cycle takes $\\frac{1}{3}$ ns, so $450$ cycles take $150$ ns.",
+      "origin": "generated",
+      "check": {"status":"corrected","printed":"1350","resolved":"150","method":"blind","note":"The printed value multiplied by the clock rate instead of dividing by it."}
+    },
+    {
+      "id": "fixturesys-s3-c1-fc220c2f",
+      "source": {"key":"fixturesys","title":"Fixture Systems Notes","file":"fixture-systems.pdf","page":3},
+      "area": "systems",
+      "topics": ["networking","serialisation-delay"],
+      "difficulty": 3,
+      "type": "numeric",
+      "prompt": "How many microseconds does it take to transmit a $1500$-byte frame onto a $10$ Gbit/s link?",
+      "answer": {"value":"1.2"},
+      "solution": "The frame is $1500 \\cdot 8 = 12000$ bits, and $12000 / 10^{10}$ seconds is $1.2$ microseconds.",
+      "origin": "generated",
+      "check": {"status":"disputed","printed":"1.2","resolved":"1.216","method":"blind","note":"The re-solver added 20 bytes of preamble and inter-frame gap to the frame."}
+    },
+    {
+      "id": "fixturesys-s4-c1-31442a11",
+      "source": {"key":"fixturesys","title":"Fixture Systems Notes","file":"fixture-systems.pdf","page":4},
+      "area": "systems",
+      "topics": ["cache-hierarchy"],
+      "difficulty": 1,
+      "type": "mcq",
+      "prompt": "What is the cache line size on current mainstream x86-64 CPUs?",
+      "answer": {"choices":["16 bytes","32 bytes","64 bytes","128 bytes"],"correct":2},
+      "solution": "64 bytes on current Intel and AMD x86-64 cores.",
+      "origin": "generated",
+      "check": {"status":"agreed","method":"blind"}
+    },
+    {
+      "id": "fixturesys-s5-c1-4de5bc21",
+      "source": {"key":"fixturesys","title":"Fixture Systems Notes","file":"fixture-systems.pdf","page":5},
+      "area": "systems",
+      "topics": ["io-multiplexing","linux"],
+      "difficulty": 2,
+      "type": "mcq",
+      "prompt": "Which Linux interface lets one thread wait on many sockets at once, at a cost that grows with the number of ready sockets rather than the number being watched?",
+      "answer": {"choices":["select","poll","epoll","read"],"correct":2},
+      "solution": "`epoll` keeps the set of watched descriptors in the kernel and returns only the ready ones. `select` and `poll` scan every watched descriptor on each call.",
+      "origin": "source",
+      "check": {"status":"agreed","method":"blind"}
+    },
+    {
+      "id": "fixturesys-s6-c1-b483ecba",
+      "source": {"key":"fixturesys","title":"Fixture Systems Notes","file":"fixture-systems.pdf","page":6},
+      "area": "systems",
+      "topics": ["false-sharing","cache-hierarchy"],
+      "difficulty": 2,
+      "type": "free",
+      "prompt": "What is false sharing, and how do you avoid it?",
+      "answer": {"value":"Two threads write to different variables that sit on the same cache line, so the line bounces between cores under the coherence protocol. Avoid it by padding or aligning per-thread data to the cache line size, for example with `alignas(64)`."},
+      "solution": "Coherence works per cache line, not per variable, so independent writes to one line serialise.",
+      "origin": "generated",
+      "check": {"status":"unverified"}
+    },
+    {
+      "id": "fixturesys-s7-c1-657f566a",
+      "source": {"key":"fixturesys","title":"Fixture Systems Notes","file":"fixture-systems.pdf","page":7},
+      "area": "systems",
+      "topics": ["lock-free","memory-ordering"],
+      "difficulty": 5,
+      "type": "free",
+      "prompt": "How can a single-producer, single-consumer ring buffer be made lock-free, and which memory orderings do its head and tail indices need?",
+      "answer": {"value":"Give each index a single writer: only the producer writes `tail` and only the consumer writes `head`. The producer writes the slot, then stores `tail` with release; the consumer loads `tail` with acquire before reading the slot. In the other direction, the consumer stores `head` with release after reading, and the producer loads `head` with acquire to check for free space. No locks or read-modify-write operations are needed."},
+      "solution": "The release store publishes the slot contents, and the matching acquire load makes them visible to the other thread. Each thread may read its own index with relaxed ordering.",
+      "origin": "generated",
+      "check": {"status":"agreed","method":"blind"}
+    },
+    {
+      "id": "fixturesys-s8-c1-87c9db44",
+      "source": {"key":"fixturesys","title":"Fixture Systems Notes","file":"fixture-systems.pdf","page":8},
+      "area": "systems",
+      "topics": ["memory-ordering","atomics"],
+      "difficulty": 4,
+      "type": "mcq",
+      "prompt": "What does `std::memory_order_acquire` on an atomic load guarantee within the loading thread?",
+      "answer": {"choices":["Only that the load itself is atomic","No later reads or writes in this thread can be reordered before the load","No earlier writes in this thread can be reordered after the load","A full fence that orders the memory operations of every core"],"correct":1},
+      "solution": "An acquire load stops later memory operations in the same thread from moving above it. Paired with a release store that it reads from, it makes every write made before that store visible after the load.",
+      "origin": "generated",
+      "check": {"status":"unverified"}
+    }
+  ]
+}

@@ -1,0 +1,19 @@
+{
+  "source": "synthetic fixture (not the real list)",
+  "list": "neetcode150",
+  "count": 12,
+  "problems": [
+    {"order":1,"problem":"Contains Duplicate","slug":"contains-duplicate","url":"https://leetcode.com/problems/contains-duplicate/","difficulty":"Easy","pattern":"Arrays & Hashing","leetcode_id":217},
+    {"order":2,"problem":"Valid Anagram","slug":"valid-anagram","url":"https://leetcode.com/problems/valid-anagram/","difficulty":"Easy","pattern":"Arrays & Hashing","leetcode_id":242},
+    {"order":3,"problem":"Two Sum","slug":"two-sum","url":"https://leetcode.com/problems/two-sum/","difficulty":"Easy","pattern":"Arrays & Hashing","leetcode_id":1},
+    {"order":4,"problem":"Group Anagrams","slug":"group-anagrams","url":"https://leetcode.com/problems/group-anagrams/","difficulty":"Medium","pattern":"Arrays & Hashing","leetcode_id":49},
+    {"order":5,"problem":"Valid Palindrome","slug":"valid-palindrome","url":"https://leetcode.com/problems/valid-palindrome/","difficulty":"Easy","pattern":"Two Pointers","leetcode_id":125},
+    {"order":6,"problem":"Two Sum II - Input Array Is Sorted","slug":"two-sum-ii-input-array-is-sorted","url":"https://leetcode.com/problems/two-sum-ii-input-array-is-sorted/","difficulty":"Medium","pattern":"Two Pointers","leetcode_id":167},
+    {"order":7,"problem":"3Sum","slug":"3sum","url":"https://leetcode.com/problems/3sum/","difficulty":"Medium","pattern":"Two Pointers","leetcode_id":15},
+    {"order":8,"problem":"Valid Parentheses","slug":"valid-parentheses","url":"https://leetcode.com/problems/valid-parentheses/","difficulty":"Easy","pattern":"Stack","leetcode_id":20},
+    {"order":9,"problem":"Min Stack","slug":"min-stack","url":"https://leetcode.com/problems/min-stack/","difficulty":"Medium","pattern":"Stack","leetcode_id":155},
+    {"order":10,"problem":"Evaluate Reverse Polish Notation","slug":"evaluate-reverse-polish-notation","url":"https://leetcode.com/problems/evaluate-reverse-polish-notation/","difficulty":"Medium","pattern":"Stack","leetcode_id":150},
+    {"order":11,"problem":"Binary Search","slug":"binary-search","url":"https://leetcode.com/problems/binary-search/","difficulty":"Easy","pattern":"Binary Search","leetcode_id":704},
+    {"order":12,"problem":"Search a 2D Matrix","slug":"search-a-2d-matrix","url":"https://leetcode.com/problems/search-a-2d-matrix/","difficulty":"Medium","pattern":"Binary Search","leetcode_id":74}
+  ]
+}

@@ -4,6 +4,8 @@
 //
 //   npm run e2e               headless
 //   AM_HEADED=1 npm run e2e   watch it
+//   AM_E2E_ONLY=v3 npm run e2e   only scenarios 1-11 (+ the sweep)
+//   AM_E2E_ONLY=v4 npm run e2e   only the v4 scenarios in e2e/v4.js (+ the sweep)
 //
 // What is real vs. stubbed:
 //   - Zetamac: the real site, a real 30-second game played by the harness.
@@ -89,11 +91,32 @@ function toolReply(name, args) {
     { id: "mock", choices: [], usage: { prompt_tokens: 100, completion_tokens: 10 } },
   ]);
 }
+// v4 scenarios register their own scripted replies here (addReply / clearReplies, §K1).
+const extraReplies = []; // [{ pred(body) → boolean, reply: SSE string | (body) => SSE string }]
+function addReply(pred, reply) {
+  const entry = { pred, reply };
+  extraReplies.push(entry);
+  return () => {
+    const i = extraReplies.indexOf(entry);
+    if (i >= 0) extraReplies.splice(i, 1);
+  };
+}
+function clearReplies() {
+  extraReplies.length = 0;
+}
+
+// Order (§K1): (1) a tool result gets the v3 tool-result reply, so the tool loop ends;
+// (2) extraReplies in registration order, first matching pred wins; (3) the v3 rules.
 function scriptedReply(body) {
   const msgs = body.messages || [];
   const last = msgs[msgs.length - 1] || {};
   const text = String(last.content || "");
   if (last.role === "tool") return textReply(`Tool result received: ${text.slice(0, 80)}`);
+  for (const r of extraReplies) {
+    let hit = false;
+    try { hit = !!r.pred(body); } catch (e) { hit = false; }
+    if (hit) return typeof r.reply === "function" ? r.reply(body) : r.reply;
+  }
   if (/did 4 green book/i.test(text)) return toolReply("log_practice", { track: "probability", amount: 4, note: "Green Book ch.2" });
   if (/log leetcode by hand/i.test(text)) return toolReply("log_practice", { track: "leetcode", amount: 1 });
   if (/Sunday weekly review/.test(text)) return textReply("Weekly review done: behind on probability, Zetamac trending up.");
@@ -139,9 +162,10 @@ async function seedState(patch) {
   return next;
 }
 
+const LOG_KEYS = ["amLogs_panel", "amLogs_content", "amLogs_bg", "amLogs_prep"];
 async function allLogs() {
-  const got = await storage(["amLogs_panel", "amLogs_content", "amLogs_bg"]);
-  return ["amLogs_panel", "amLogs_content", "amLogs_bg"].flatMap(k => got[k] || []).sort((a, b) => a.t - b.t);
+  const got = await storage(LOG_KEYS);
+  return LOG_KEYS.flatMap(k => got[k] || []).sort((a, b) => a.t - b.t);
 }
 async function waitForLog(pred, timeoutMs = 15000, what = "log entry") {
   const t0 = Date.now();
@@ -153,13 +177,26 @@ async function waitForLog(pred, timeoutMs = 15000, what = "log entry") {
   throw new Error(`timed out waiting for ${what}`);
 }
 
-async function openPanel({ fixedTime } = {}) {
+async function openPanel({ fixedTime, query = "" } = {}) {
   const page = await context.newPage();
   attachDiagnostics(page, "panel");
   if (fixedTime) await page.clock.setFixedTime(fixedTime);
-  await page.goto(`chrome-extension://${EXT}/sidepanel.html`);
+  await page.goto(`chrome-extension://${EXT}/sidepanel.html${query}`);
   await page.waitForSelector("#planBanner");
   await page.waitForFunction(() => document.getElementById("planBanner").textContent.includes("Today:"));
+  return page;
+}
+
+// prep.html (v4). `install` (epoch ms) installs a running fake clock before the page loads,
+// so OA timers can be driven with page.clock.fastForward / runFor; `fixedTime` freezes
+// Date for date-dependent rendering. Never both on one page (§K2).
+async function openPrep(query = "?fixture=1", { fixedTime, install } = {}) {
+  const page = await context.newPage();
+  attachDiagnostics(page, "prep");
+  if (install !== undefined && install !== null) await page.clock.install({ time: install });
+  if (fixedTime) await page.clock.setFixedTime(fixedTime);
+  await page.goto(`chrome-extension://${EXT}/prep.html${query}`);
+  await page.waitForFunction(() => !!document.body && document.body.dataset.ready === "1", null, { timeout: 15000 });
   return page;
 }
 
@@ -587,7 +624,7 @@ async function s12_debugSweep() {
   // Third-party pages (LeetCode's Cloudflare wall, YouTube) log their own console noise;
   // only extension pages and anything mentioning the extension count.
   const errs = pageErrors.concat(consoleIssues.filter(c => c.type === "error" &&
-    (["panel", "util", "service-worker"].includes(c.page) || /chrome-extension:|\[AM /.test(c.text)) &&
+    (["panel", "prep", "util", "service-worker"].includes(c.page) || /chrome-extension:|\[AM /.test(c.text)) &&
     !/net::ERR|favicon|HTTP 500|500 \(/.test(c.text)));
   if (errs.length) console.log("    page/console errors:", JSON.stringify(errs, null, 1));
   assert(bad.length === 0, `unexpected log events: ${JSON.stringify(bad.map(b => ({ c: b.component, e: b.event, d: b.data })), null, 1)}`);
@@ -597,19 +634,42 @@ async function s12_debugSweep() {
 
 // ---------- main ----------
 
+// AM_E2E_ONLY=v4 skips scenarios 1-11; AM_E2E_ONLY=v3 skips the v4 module (§K1).
+const ONLY = process.env.AM_E2E_ONLY || "";
+
 (async () => {
   await launch();
-  await scenario("1 fresh install: v3 defaults, no migration", s1_freshInstall);
-  await scenario("2 v2 install with untouched defaults migrates plan + model", s2_migrateUntouchedV2);
-  await scenario("3 edited plan / custom model survive; reset button works", s3_migratePreservesEdits);
-  await scenario("4 Zetamac: real 30 s game captured once with the right score", s4_zetamacLiveGame);
-  await scenario("5 LeetCode (fixture on real origin): unarmed ignored, armed solve timed + harvested", s5_leetcodeFixtureSolve);
-  await scenario("6 LeetCode live two-sum page: content script attaches and times", s6_leetcodeLivePage);
-  await scenario("7 chat tool loop: log_practice via fragmented SSE tool call + validation", s7_chatToolLoop);
-  await scenario("8 interview modes: quantdev + dsa prompts, verdict keys, UI lock", s8_interviewModes);
-  await scenario("9 check-ins: Sunday weekly review, Monday daily, failed call not marked", s9_checkins);
-  await scenario("10 distraction overlay: Zetamac button, hidden when day done", s10_distractionOverlay);
-  await scenario("11 background worker: nudge alarm + manifest", s11_backgroundWorker);
+  if (ONLY !== "v4") {
+    await scenario("1 fresh install: v3 defaults, no migration", s1_freshInstall);
+    await scenario("2 v2 install with untouched defaults migrates plan + model", s2_migrateUntouchedV2);
+    await scenario("3 edited plan / custom model survive; reset button works", s3_migratePreservesEdits);
+    await scenario("4 Zetamac: real 30 s game captured once with the right score", s4_zetamacLiveGame);
+    await scenario("5 LeetCode (fixture on real origin): unarmed ignored, armed solve timed + harvested", s5_leetcodeFixtureSolve);
+    await scenario("6 LeetCode live two-sum page: content script attaches and times", s6_leetcodeLivePage);
+    await scenario("7 chat tool loop: log_practice via fragmented SSE tool call + validation", s7_chatToolLoop);
+    await scenario("8 interview modes: quantdev + dsa prompts, verdict keys, UI lock", s8_interviewModes);
+    await scenario("9 check-ins: Sunday weekly review, Monday daily, failed call not marked", s9_checkins);
+    await scenario("10 distraction overlay: Zetamac button, hidden when day done", s10_distractionOverlay);
+    await scenario("11 background worker: nudge alarm + manifest", s11_backgroundWorker);
+  }
+  if (ONLY !== "v3") {
+    const helpers = {
+      context, EXT, util, ROOT, OUT,
+      scenario, assert, Skip,
+      storage, setStorage, clearStorage, seedState,
+      openPanel, openPrep,
+      waitForLog, allLogs,
+      waitForRequest, requests, lastUser,
+      chat, shot,
+      textReply, toolReply, addReply, clearReplies,
+      attachDiagnostics,
+      P, amTodayKey,
+    };
+    try { await require("./v4.js")(helpers); } catch (e) {
+      results.push({ name: "v4 module load", ok: false, ms: 0, error: e.message });
+      console.log(`✖ v4 module load\n    ${e.message}`);
+    }
+  }
   await scenario("12 debug sweep: no uncaught errors, no unexpected log events", s12_debugSweep);
   await context.close();
   const failed = results.filter(r => !r.ok);

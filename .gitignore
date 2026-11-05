@@ -2,3 +2,6 @@
 .DS_Store
 node_modules/
 e2e/out/
+bank/
+bank-build/.cache/
+bank-build/sim/items/

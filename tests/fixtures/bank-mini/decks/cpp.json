@@ -1,0 +1,111 @@
+{
+  "version": 1,
+  "deck": "cpp",
+  "generated": "2026-11-05T00:00:00.000Z",
+  "items": [
+    {
+      "id": "fixturecpp-s1-c1-1e555d8e",
+      "source": {"key":"fixturecpp","title":"Fixture C++ Notes","file":"fixture-cpp.pdf","page":1},
+      "area": "cpp",
+      "topics": ["arrays","sizeof"],
+      "difficulty": 1,
+      "type": "numeric",
+      "prompt": "Given `int a[4][5];`, what is the value of `sizeof(a) / sizeof(a[0])`?",
+      "answer": {"value":"4"},
+      "solution": "`a[0]` is an `int[5]`, so the ratio counts the rows of `a`: $4$.",
+      "origin": "generated",
+      "check": {"status":"corrected","printed":"5","resolved":"4","method":"blind","note":"The printed answer counted the inner dimension."}
+    },
+    {
+      "id": "fixturecpp-s2-c1-724197d7",
+      "source": {"key":"fixturecpp","title":"Fixture C++ Notes","file":"fixture-cpp.pdf","page":2},
+      "area": "cpp",
+      "topics": ["move-semantics","value-categories"],
+      "difficulty": 2,
+      "type": "free",
+      "prompt": "What does `std::move` actually do at run time?",
+      "answer": {"value":"Nothing by itself: it is an unconditional cast to an rvalue reference (`static_cast<T&&>`). A move only happens if the result is then bound to a move constructor or move assignment operator."},
+      "solution": "`std::move` is a cast. Ownership transfer is done by the overload it selects, not by `std::move`.",
+      "origin": "generated",
+      "check": {"status":"agreed","method":"blind"}
+    },
+    {
+      "id": "fixturecpp-s3-c1-44ac0fc6",
+      "source": {"key":"fixturecpp","title":"Fixture C++ Notes","file":"fixture-cpp.pdf","page":3},
+      "area": "cpp",
+      "topics": ["move-semantics","standard-library"],
+      "difficulty": 3,
+      "type": "mcq",
+      "prompt": "After `std::string t = std::move(s);`, what does the standard library guarantee about `s`?",
+      "answer": {"choices":["It is empty","It is unchanged","It is in a valid but unspecified state","Any further use of it is undefined behaviour"],"correct":2},
+      "solution": "Moved-from standard library objects are left valid but unspecified: you may assign to `s` or destroy it, but you should not rely on its value.",
+      "origin": "generated",
+      "check": {"status":"unverified"}
+    },
+    {
+      "id": "fixturecpp-s3-c2-fa7b1504",
+      "source": {"key":"fixturecpp","title":"Fixture C++ Notes","file":"fixture-cpp.pdf","page":3},
+      "area": "cpp",
+      "topics": ["parameter-passing","move-semantics"],
+      "difficulty": 3,
+      "type": "free",
+      "prompt": "A class has a `std::string` member that its constructor initialises from a parameter. Should the parameter be a `const std::string&` that is copied, or a `std::string` taken by value and then moved into the member? Explain.",
+      "answer": {"value":"Take a `const std::string&` and copy it into the member. Every caller then pays exactly one copy, and the signature is the familiar one."},
+      "solution": "With `const&`, lvalue and rvalue arguments both cost one copy. With pass-by-value plus `std::move`, an lvalue costs one copy and one move, and an rvalue costs at most two moves. Which is better depends on how callers usually pass the argument.",
+      "origin": "generated",
+      "check": {"status":"disputed","printed":"By const reference","resolved":"By value, then move","method":"blind","note":"The re-solver preferred pass-by-value because rvalue arguments then cost moves instead of a copy."}
+    },
+    {
+      "id": "fixturecpp-s5-c1-6d654661",
+      "source": {"key":"fixturecpp","title":"Fixture C++ Notes","file":"fixture-cpp.pdf","page":5},
+      "area": "cpp",
+      "topics": ["class-layout","padding"],
+      "difficulty": 2,
+      "type": "numeric",
+      "prompt": "On x86-64 with the usual alignment rules, what is `sizeof(S)` for `struct S { char a; int b; char c; };`?",
+      "answer": {"value":"12"},
+      "solution": "`a` at offset 0, 3 bytes padding, `b` at 4, `c` at 8, then 3 bytes tail padding to a multiple of 4: 12.",
+      "origin": "generated",
+      "check": {"status":"agreed","method":"blind+sim"}
+    },
+    {
+      "id": "fixturecpp-s6-c1-d7a38255",
+      "source": {"key":"fixturecpp","title":"Fixture C++ Notes","file":"fixture-cpp.pdf","page":6},
+      "area": "cpp",
+      "topics": ["virtual-functions"],
+      "difficulty": 1,
+      "type": "mcq",
+      "prompt": "Which of these member functions cannot be declared `virtual`?",
+      "answer": {"choices":["Destructors","Constructors","Overloaded operators","Const member functions"],"correct":1},
+      "solution": "A constructor runs before the object's dynamic type is established, so it cannot be virtual. Destructors, overloaded operators and const member functions can all be virtual.",
+      "origin": "generated",
+      "check": {"status":"corrected","printed":"Destructors","resolved":"Constructors","method":"blind","note":"The printed key marked the first choice."}
+    },
+    {
+      "id": "fixturecpp-s7-c1-d611248c",
+      "source": {"key":"fixturecpp","title":"Fixture C++ Notes","file":"fixture-cpp.pdf","page":7},
+      "area": "cpp",
+      "topics": ["templates","constexpr"],
+      "difficulty": 3,
+      "type": "numeric",
+      "prompt": "Given `template <int N> struct Fib { static constexpr int value = Fib<N - 1>::value + Fib<N - 2>::value; };` with specialisations in which `Fib<0>::value` is `0` and `Fib<1>::value` is `1`, what is `Fib<10>::value`?",
+      "answer": {"value":"55"},
+      "solution": "The template computes Fibonacci numbers at compile time: $0, 1, 1, 2, 3, 5, 8, 13, 21, 34, 55$.",
+      "origin": "source",
+      "check": {"status":"agreed","method":"blind+sim"}
+    },
+    {
+      "id": "fixturecpp-s8-c1-fbe10fcc",
+      "source": {"key":"fixturecpp","title":"Fixture C++ Notes","file":"fixture-cpp.pdf","page":8},
+      "area": "cpp",
+      "topics": ["noexcept","exception-safety"],
+      "difficulty": 4,
+      "type": "free",
+      "prompt": "When `std::vector` reallocates, why does it copy its elements instead of moving them if the element type is copyable and its move constructor is not `noexcept`?",
+      "answer": {"value":"To keep the strong exception guarantee. If a move threw halfway through, some elements would already have been moved out of the old buffer and could not be restored. Copying leaves the old buffer intact, so `std::vector` moves only when the move constructor is `noexcept` (via `std::move_if_noexcept`)."},
+      "solution": "Mark move constructors `noexcept` when they cannot throw, so that containers can move elements instead of copying them.",
+      "origin": "generated",
+      "check": {"status":"agreed","method":"blind"}
+    }
+  ]
+}

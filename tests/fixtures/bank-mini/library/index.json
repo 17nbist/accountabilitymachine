@@ -1,0 +1,41 @@
+{
+  "version": 1,
+  "categories": [
+    {
+      "folder": "00-user-supplied",
+      "label": "User supplied",
+      "entries": [
+        {"file":"fixture-notes.pdf","title":"Fixture Notes","key":"fixture"},
+        {"file":"fixture-empty.pdf","title":"Fixture Empty Notes"}
+      ]
+    },
+    {
+      "folder": "01-probability",
+      "label": "Probability",
+      "entries": [
+        {"file":"fixture-stats.pdf","title":"Fixture Statistics Notes","key":"fixturestats"}
+      ]
+    },
+    {
+      "folder": "02-quant-interview",
+      "label": "Quant interview",
+      "entries": [
+        {"file":"fixture-finance.pdf","title":"Fixture Finance Notes","key":"fixturefin"}
+      ]
+    },
+    {
+      "folder": "03-cpp",
+      "label": "C++",
+      "entries": [
+        {"file":"fixture-cpp.pdf","title":"Fixture C++ Notes","key":"fixturecpp"}
+      ]
+    },
+    {
+      "folder": "04-systems-low-latency",
+      "label": "Systems & low latency",
+      "entries": [
+        {"file":"fixture-systems.pdf","title":"Fixture Systems Notes","key":"fixturesys"}
+      ]
+    }
+  ]
+}
