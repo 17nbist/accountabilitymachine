@@ -469,6 +469,109 @@ writers and reviewers, settled before the pre-lock tag)
   `--help`, `-h` and `help` exit 0. An unknown step or source exits 1 with the usage text. The
   `decks` step takes `cpp` or `systems` as its second argument. (§M7)
 
+**M1: prep/rng.js** (implementer choices, not marked in `V4-CONTRACTS.md`)
+
+- Error types: `randInt` throws `TypeError` for a non-integer bound and `RangeError` for
+  `lo > hi`; `pick` throws `RangeError` for an empty array; `pick` and `shuffle` throw `TypeError`
+  for a non-array other than `null` / `undefined`. Each check runs before any draw, so a throwing
+  call consumes nothing (the contract leaves this implementation-defined). (§A4, §B2)
+- The `rng` argument is not type-checked: it is called as a function, so a non-function throws
+  the engine's own `TypeError` on the first draw. (§B2)
+
+**M1: prep/answer.js** (implementer choices, not marked in `V4-CONTRACTS.md`)
+
+- Tokenize first, then parse and evaluate in one pass. So tokenizer errors (an unknown name, a
+  character that is not allowed, a non-finite literal such as `1e400`) win over syntax and domain
+  errors in the same input. The contract leaves the order for mixed problems open. (§C1)
+- The IMUL rule is applied as written, to every NUMBER token. That includes the second number of
+  an `nCk`: `"10C3pi"` = 120π, and `"10C(3,1)"` = 10·C(3,1) = 30 (`"10C(3)"` is still an error,
+  because C(3) has no comma). (§C1)
+- A literal that underflows (`"1e-400"`) is 0, and 0 is finite, so it is accepted. A divisor that
+  underflows to 0 (`"1/(1e-300*1e-300)"`) is the `zero` error, because the rule is `b === 0`.
+  (§C1)
+- Only the parser's own error type becomes `{ ok: false, error }`. Any other exception is a bug,
+  so it is re-thrown, not hidden. Error texts name the problem and repeat the value where that
+  helps (`got 171`, `(-8)^0.333333 is not a finite real number`). (§A4, §C1)
+- A non-string `parseAnswer` argument gives the error "The answer must be text" (no keyword). (§C1)
+- A missing `item` or `item.answer` never throws. `checkNumeric` treats it as a broken item
+  (`expected: null`, keyword `item`). `checkMcq` returns `expected: null` when `answer.correct`
+  is missing, and an error when `answer.choices` is not an array. (§C2, §C3)
+- `formatPreview` returns `""` for a non-number or non-finite value. `parseAnswer` never produces
+  one. (§C4)
+
+**M1: prep/srs.js** (implementer choices, not marked in `V4-CONTRACTS.md`)
+
+- `schedule` checks the grade first (`TypeError`), then throws a `TypeError` for a `now` that is
+  not a finite number, so a card with a `NaN` due is never stored. `nextIntervals` passes 0.
+  (§A4, §D2)
+- "Missing" card fields: a numeric field (`ease`, `interval`, `reps`, `lapses`) that is not a
+  finite number (missing, `null`, a string, `NaN`) takes its `newCard()` value. `seen` follows
+  `c.seen ?? now` exactly as written. A card that is not an object is `newCard()`. (§D2)
+- Bank entries that are not objects, or whose `id` is not a string, are skipped by `buildQueue`,
+  `drillQueue` and `dueCount`, since they cannot be queued or keyed by id. De-duplication compares
+  exact id strings, first occurrence wins. (§D6, §D7, §D9)
+- Cards are read as own properties only, so an id such as `constructor` never reads
+  `Object.prototype`. `replayCards` builds in a `Map`, keyed by `String(itemId)` (object-key
+  semantics), and returns `Object.fromEntries`, so `__proto__` stays an ordinary key. (§D6, §D9)
+- A non-finite or missing `difficulty` sorts after every real difficulty, then bank order.
+  (§D6, §D7)
+- `buildQueue` reads `opts = null` as `{}`. `drillQueue` reads a non-object `drill` as `{}`; a
+  `count` that is not a non-negative number gives `[]`, a fractional count is floored, and
+  `Infinity` means no limit. (§D7)
+- `replayCards` skips entries that are not objects or whose `ts` is not a finite number. `uptoTs`
+  has no default, so an undefined `uptoTs` keeps nothing. (§D9)
+- `masteryOf` reads a non-array `itemIds` as `[]` (so `null`). `dueCount` reads a non-array
+  `areas` other than `undefined` as `[]`. A `bank` that is neither an array nor an object with an
+  `items` array is `[]`. `answerOk` of a non-object entry is `false`. (§A3, §D4, §D9)
+- `AREA_ORDER`, `GRADES`, `DEFAULT_SETTINGS` and `DEFAULT_SETTINGS.areas` are frozen.
+  `normalizeSettings` always returns a fresh object and a fresh `areas` array, and turns `-0`
+  into `0`. `drillQueue` and `dueCount` read `AREAS` from `PrepBank`. (§A6, §D5)
+- The round-robin puts any area outside `AREA_ORDER` after the six known ones rather than dropping
+  it. This cannot happen with today's `AREAS`. (§D8)
+- `prep/srs.js` requires only `bank.js`. `localDayStart` covers every local-day need, so it does
+  not read `amTodayKey`; in the browser `shared.js` still loads first (§A5 order). (§A5)
+
+**M1: prep/bank.js, prep-loader.js** (implementer choices, not marked in `V4-CONTRACTS.md`)
+
+- `bankValidate` runs the type-specific answer checks (`answer.value`, `answer.choices`,
+  `answer.correct`) only for a known `type`. An unknown type gets the `type` error, and its
+  `answer` is checked only for being an object and for `answer.tol`. The hash check is then
+  skipped, as §E4 says. (§E4)
+- mcq `answer.correct` is checked against `choices.length` whenever `choices` is an array, even
+  an invalid one. When `choices` is not an array (so the upper bound is unknown) it only has to
+  be an integer of at least 0, and the `answer.choices` error carries the item. (§E4)
+- `bankValidate` does not report locators longer than 40 characters, which §E2 leaves
+  implementation-defined. It checks nothing on `check.printed` / `check.resolved` for `agreed`
+  and `unverified` items, and nothing on `check.note`. (§E2, §E4)
+- If `PrepAnswer.parseAnswer` itself throws (a parser bug, not a parse error), `bankValidate`
+  reports an `answer.value` error with the exception text, because `bankValidate` never throws.
+  (§E4)
+- Error order per item: the id format and duplicate errors, then the fields in schema order, then
+  the key-part and hash errors. Only the hash-mismatch message contains the word "hash", and
+  only the duplicate message contains "duplicate", so keyword matches cannot hit another id
+  error. (§A4, §E4)
+- The exported area, type, status, origin and method arrays are frozen. The regexes have no `g`
+  or `y` flag, so `test` and `exec` keep no state. (§E2)
+- `sha256Hex` makes a new `TextEncoder` per call, so the module has no state. A lone surrogate
+  encodes as U+FFFD, the same as `node:crypto` with `"utf8"`. (§E3)
+- `indexById`, `topicSet` and `sourceCounts` read anything that is not an array or an object with
+  an `items` array as `[]`, as `PrepSrs` does for a `bank`. Entries that are not objects, or lack
+  the field read (a non-empty string `id`, a `topics` array, a string `source.file`), are
+  skipped; `topicSet` keeps only string topics. `indexById` and `sourceCounts` build a `Map` and
+  return `Object.fromEntries`, so an id or file such as `__proto__` is an ordinary own key.
+  (§A6, §E5)
+- `allItems` throws a `TypeError` when `decks` is neither an array nor `null` / `undefined` (a
+  call-site bug, such as passing one deck without brackets). A `bankJson` or deck without an
+  `items` array adds nothing. Holes in an `items` array come through as `undefined`, as with
+  spread. (§A4, §E5)
+- `prepLoadBank` fetches `bank.json` first and the other four files in parallel only when it
+  loaded, so a checkout without `bank/` logs one file-not-found error instead of five. Any
+  argument, including `null`, is accepted (`fixture` is `!!(opts && opts.fixture)`), so it never
+  rejects. A `bank.json` whose JSON is `null` counts as missing. (§E6)
+- The M0 interim loader is gone from `prep-ui.js`. If `prep-loader.js` failed to load, the page
+  treats the bank as missing (bank-missing screen, still `data-ready="1"`), and `prep:modules`
+  lists `prepLoadBank`. (§E6, §J1)
+
 ## 2. Violations
 
 (none yet)
@@ -620,6 +723,12 @@ writers and reviewers, settled before the pre-lock tag)
 - **KaTeX fonts in all three formats.** Chrome only fetches the woff2 files (about 0.3 MB). The
   woff and ttf files (about 0.9 MB) stay so the stock `katex.min.css` works unedited.
   `check:no-bank` exempts `vendor/`.
+- **The loader waits for `bank.json` before it fetches the rest.** That adds one local file
+  read to every load of prep.html and the side panel (milliseconds for extension files). In
+  exchange, the usual no-bank checkout logs one file-not-found error instead of five.
+- **The pure-JS SHA-256 is slower than native code.** It hashes each item once per
+  `bankValidate` (a few KB each, about 1000 items in the real bank), which stays well under a
+  second. It is never on the per-answer path.
 
 **M0 tooling**
 

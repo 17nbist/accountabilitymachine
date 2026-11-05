@@ -29,35 +29,10 @@
 
   // ---------- bank ----------
 
-  async function fetchJson(url) {
-    // §E6: a missing extension file rejects, a non-OK response or bad JSON is also "no file".
-    try {
-      const res = await fetch(url);
-      return res.ok ? await res.json() : null;
-    } catch (e) {
-      return null;
-    }
-  }
-
-  // M0 stand-in for prepLoadBank (§E6, prep-loader.js). It reads bank.json only and returns the
-  // same shape with the other files null. Once prepLoadBank exists it is used instead.
-  async function interimLoadBank({ fixture: fx } = {}) {
-    const root = fx ? "tests/fixtures/bank-mini/" : "bank/";
-    const bankJson = await fetchJson(chrome.runtime.getURL(root + "bank.json"));
-    if (!bankJson) return null;
-    return {
-      source: fx ? "fixture" : "bank",
-      root,
-      bankJson,
-      decks: { cpp: null, systems: null },
-      items: Array.isArray(bankJson.items) ? bankJson.items : [],
-      nc150: null,
-      library: null,
-    };
-  }
-
-  function loadBank() {
-    return typeof prepLoadBank === "function" ? prepLoadBank({ fixture }) : interimLoadBank({ fixture });
+  // prepLoadBank (prep-loader.js, §E6) never rejects. If that script failed to load, the page
+  // still reaches ready and shows the bank-missing screen; init logs the missing name.
+  async function loadBank() {
+    return typeof prepLoadBank === "function" ? prepLoadBank({ fixture }) : null;
   }
 
   // ---------- tabs ----------
