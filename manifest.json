@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Accountability Machine",
-  "version": "3.0.0",
+  "version": "4.0.0",
   "description": "AI accountability buddy for interview prep: LeetCode solves and solve times, Zetamac scores, probability/C++/project tracks, four mock-interview modes, distraction overlay, and a self-editing memory.",
   "minimum_chrome_version": "116",
   "permissions": [
@@ -9,7 +9,8 @@
     "storage",
     "tabs",
     "alarms",
-    "notifications"
+    "notifications",
+    "unlimitedStorage"
   ],
   "host_permissions": [
     "https://openrouter.ai/*",

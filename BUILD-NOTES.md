@@ -320,6 +320,155 @@ writers and reviewers, settled before the pre-lock tag)
 - Test method: a test in any `v4-*` file may include an assertion that holds at Red when the same
   test also needs v4 (e.g. the v3 checkpoint half of the spec §8 checkpoint test). (§N9)
 
+**M0: prep.html shell** (implementer choices, not marked in `V4-CONTRACTS.md`)
+
+- **KaTeX 0.19.1** (npm `katex@0.19.1`, MIT; fetched with `npm pack`, not a `package.json`
+  dependency) is vendored in `vendor/katex/`: `katex.min.js`, `katex.min.css`,
+  `contrib/auto-render.min.js`, `LICENSE`, and all 60 files of `fonts/` (woff2, woff and ttf, as
+  the stock CSS references them). No file was edited. To upgrade, replace the folder from
+  `npm pack katex@<version>`. Neither file uses `eval` or `new Function`, so it runs under the
+  MV3 CSP. (spec §2, §A5)
+- **Interim bank loader until M1.** `prep-ui.js` calls the global `prepLoadBank` when one is
+  defined (§E6 puts it in `prep-loader.js`). Otherwise it uses its own interim loader, which
+  fetches only `<root>bank.json` (root as in §E6) and returns the §E6 shape with
+  `decks: { cpp: null, systems: null }`, `nc150: null`, `library: null` and
+  `items = bankJson.items`. The interim loader is deleted once `prep-loader.js` exists. (§E6, §J1)
+- **Every §A5 script tag ships at M0**, including `prep/*.js` and `prep-loader.js`, which do not
+  exist yet. `prep-ui.js` reads each namespace with `typeof`, so a missing file only 404s. At
+  init it logs `prep:modules` with the names that are missing. (§A5)
+- **A fixture that fails to load** under `?fixture=1` gives `data-bank-source="none"` and the
+  bank-missing screen as well. §J2 defines that screen only for "no bank and no `fixture=1`".
+  (§J1, §J2)
+- An unknown or missing `tab=` value opens `today`. (§J1)
+- **Bank missing:** every panel is hidden as well as the tab buttons, and `data-ready` is still
+  set to `"1"`. The tab bar and all panels start `hidden` in the HTML, so nothing appears before
+  init decides what to show. (§J1, §J2)
+- **A shown panel has `min-height: 240px`.** Without it, an empty panel has a zero-height box,
+  which Playwright's `isVisible()` reports as hidden. (§J2)
+- **Tabs follow the WAI-ARIA tabs pattern:** `role` tablist, tab and tabpanel, a roving
+  `tabindex`, and Left/Right arrows to move between tabs. Changing tab does not rewrite the URL.
+  Clicking the tab that is already active does nothing. (§J2)
+- **Tab renderers.** `prep-ui.js` has a `RENDER` map, `RENDER[<id>](panelEl, data)`, which is
+  awaited every time a tab is shown. `data-ready` waits for the initial tab's renderer, which is
+  the §J1 ready rule. The map is empty at M0, and each tab's milestone fills in its entry.
+- **No catch-all around init or the renderers.** A renderer error becomes an unhandled rejection
+  (log.js logs `global:unhandled-rejection`, which fails the e2e sweep) and the page never
+  reaches ready. It never reports ready silently. The only `catch` is in the fetch, as §E6
+  requires.
+
+**M0: tooling** (implementer choices, not marked in `V4-CONTRACTS.md`)
+
+- **`npm run check` syntax scope.** "(top level)" is read as applying to `tests/` only. The root
+  and `tests/` are scanned top level; `prep/`, `scripts/` and `e2e/` recursively (never `e2e/out/`,
+  dot dirs or `node_modules/`); `bank-build/` recursively without `.cache/` and `sim/items/`. A
+  directory that does not exist yet is skipped. Each step prints one status line before
+  `check-ok`. (§M2)
+- **`check:no-bank` outside a git work tree** prints a notice and passes, because nothing can be
+  tracked there. Inside one, a failing `git ls-files` fails the check. (§M3)
+- **The lock root must be the work tree's top level.** If the lock root is inside a git work tree
+  but is not its top level, `lock:write`, `lock:verify` and `lock:restore` refuse (exit 1) instead
+  of checking the enclosing repo. (§M4)
+- **Lock git calls are config-proof.** Every git call in `lock.js` turns off colour, path quoting
+  and `log.showSignature`, and parses NUL-separated (`-z`) output. Diffs use `--no-renames`, and
+  `diff-tree` uses `--root`. Read-only calls set `GIT_OPTIONAL_LOCKS=0`, so `lock:verify` never
+  writes inside `.git/`. (§M4)
+- **Lock git calls are also tamper-proof (M0 tooling review).** Every git call sets
+  `GIT_NO_REPLACE_OBJECTS=1`, `core.fsmonitor=false` and `core.hooksPath=/dev/null`. Each of the
+  three was reproduced as a bypass in a throwaway clone. A `git replace` of the `v4-red` LOCK.json
+  blob made check (d) read a forged lock. A configured fsmonitor can tell `git status` that a file
+  is unchanged. A `post-checkout` hook that deleted `tests/LOCK.json` turned `lock:restore` into
+  "pre-lock, skipping", exit 0. (§M4)
+- **Byte checks back up `git diff` and `git status` (M0 tooling review).** `git diff` and `git status`
+  compare through the index. So `update-index --assume-unchanged` or `--skip-worktree`, or a clean
+  filter, hides an edit from them. All three let `lock:write` lock an edited test in a throwaway
+  clone, and assume-unchanged also hid an uncommitted edit to an amended file from
+  `lock:verify` (b).
+  - `lock:write`'s pre-lock check now also compares the raw bytes of every file under `tests/`
+    and `e2e/v4.js` at `v4-red-pre` with the working tree (`git hash-object --no-filters`).
+  - `lock:verify` (b) does the same for the lockable roots against `HEAD` when `git status` is
+    clean.
+  - Both checks are the contract's own conditions ("working tree against the tag", "no
+    uncommitted change"), so nothing new is refused in a normal tree.
+  - Both assume that git does not convert files on checkout (`core.autocrlf`, `eol` attributes).
+    This repo uses neither. (§M4)
+- **`parseDisputes` details.** An entry ends at the next heading of any level. The first `Ruling:`
+  and `File:` line of an entry count. Line keys may be list items (`-`, `*` or `+`). Entries are
+  exactly `{ id, ruling, files }`, the §M4 shape, so a `deepEqual` on the result holds. An empty
+  `Ruling:` value is `""`, which is not `amend`. (§M4)
+- **`lock:write --dispute` details.**
+  - Extra refusals (exit 1, nothing changes): an id with more than one entry in
+    `TEST-DISPUTES.md`, a file staged under two ids in one run, a staging entry that is not a regular
+    file (a symlink, say), and a repeated id in the list.
+  - A Finder `.DS_Store` inside a staging dir is ignored.
+  - A non-staged lockable file that has drifted from its LOCK hash does not cause a refusal. It
+    gets a warning, and `lock:verify` still fails on it.
+  - An id already in a file's `disputes` is not added twice.
+  - Staged bytes are written into the existing file, which keeps its mode. `.test-staging/` is
+    removed once it is empty.
+  - `--dispute=<ids>` works too. (§M4)
+- **`lock:verify` output.** Failure reasons and the no-git notice go to stderr. The `amended:`
+  lines and the OK line go to stdout. Several ids are joined with `", "`. A hash mismatch stops
+  before the git checks. In check (c), an id with zero entries or several entries in
+  `TEST-DISPUTES.md` fails. An unreadable `tests/LOCK.json` fails. (§M4)
+- **`lock:restore` unstages first.** It runs `git reset -q HEAD -- <lockable roots>` before
+  `git checkout HEAD -- <roots at HEAD>`. Without this, a file that was added to the index but never
+  committed would survive, because `git ls-files --others` lists only files outside the index.
+  Untracked entries under `tests/` and `scripts/` are removed recursively (a nested repo, for
+  example), except `.DS_Store`. Directories left empty are pruned, but never `tests/` or
+  `scripts/` themselves. Restore refuses when there is no HEAD commit. (§M4)
+- **`LOCK.json` layout.** It is written as 2-space JSON with a trailing newline, keys `version`,
+  `algorithm`, `created`, `files`, and `files` sorted by `<`. (§M4)
+- **`test:holdout` details.**
+  - A leading `~` in `HOLDOUT_DIR` is `os.homedir()`, and a relative value is relative to the cwd.
+  - A path that exists but is not a directory exits 1.
+  - A directory with no `*.test.js` exits 1. Otherwise `node --test` would get no files and
+    would discover the repo's own tests instead.
+  - File symlinks count. Directory symlinks are not followed. (§M5)
+- **Hold-out reporter format.**
+  - Nested tests are indented two spaces per level, and suites get their own line.
+  - A file that fails to load gets a `not ok <absolute path>` line.
+  - Newlines in a name become spaces.
+  - The totals line is `tests N, pass P, fail F, skipped S, todo T`, with suites not counted.
+    (§M5)
+- **Hook details.**
+  - H2's "contains" is checked on the raw command and also on a copy with backslash escapes and
+    quote marks removed. So `ls ~/Documents/Quant\ Prep/holdout*` counts as naming
+    `Quant Prep/holdout`.
+  - H2's strings also include the `~/…` spelling of the hold-out path when it is under home.
+  - A JSON payload that is not an object (an array, `null` or a string) is denied, like
+    unparseable stdin.
+  - The hook's `HOLDOUT_DIR` may start with `~`.
+  - Deny reasons name the rule (H1, H2, L1, L2) and the allowed route.
+  - **"Case-insensitive" means Unicode case folding, as on APFS (M0 tooling review).** APFS folds
+    names, so on this Mac `teſts/a.test.js` (long s), `teﬆs/…` (st ligature) and
+    `…/holdout-teſts/canary.txt` open the real files. PATH lookup folds too, so
+    `ſed -i '' … ſcripts/lock.js` runs sed and edits `scripts/lock.js`; both were reproduced in
+    scratch.
+    - Plain `toLowerCase` and the `i` regex flag miss these spellings, so each one passed H1, L1
+      and L2.
+    - Every path and command is now compared after `normalize("NFC").toUpperCase().toLowerCase()`.
+    - MENTION_RE and WRITE_VERB_RE run on the raw command and on its folded copy. For ASCII the
+      result is unchanged.
+    - The allowlist regexes still run on the raw command only. (§M6)
+- **`bank-build/sources.json`.**
+  - Built from the M2 survey with the key map `greenbook`, `stat110`, `bh`, `janestreet`,
+    `mit1805`, `mit6041`, `conroy`, `winkler`, `mit18s096`. The MIT titles (`MIT 18.05`,
+    `MIT 6.041`, `MIT 18.S096`) follow the extraction cache.
+  - `priority` follows the spec §10 order (1 to 9).
+  - `folder` is the library category (the first segment of `file`).
+  - `file` is relative to the resource root. It is the PDF itself, or, for a source spread over
+    many PDFs, a `*` glob inside one segment that matches its files (Stat 110 SP and HW, the 18.05
+    and 6.041 `pdfs/` folders, the 18.S096 `problem-sets/`).
+  - `manifestSlug` is the file name without `.pdf` for a one-file source, or the course folder
+    name for a multi-file one. The OCR'd Green Book goes to `bank/library/<file>` under the
+    manifest's name.
+  - `area` is the area with the most estimated items in the survey. It is only the source's
+    label, because every item carries its own area. (§M7)
+- **`bank:build` skeleton (until the M2 pipeline lands).** Every step prints
+  `bank:build <step>: not implemented yet` and the run exits 1, because nothing was built.
+  `--help`, `-h` and `help` exit 0. An unknown step or source exits 1 with the usage text. The
+  `decks` step takes `cpp` or `systems` as its second argument. (§M7)
+
 ## 2. Violations
 
 (none yet)
@@ -398,6 +547,29 @@ writers and reviewers, settled before the pre-lock tag)
   never copied into the repo or shown to implementers. After the hold-out phase has used them to
   check the hold-out tests, they are archived inside the hold-out folder (which rule H1 hides) and
   deleted from scratch.
+- **Hold-out suite.** 120 unit tests in 5 files (rng+answer 28, srs+bank 32, oa 19, market 11,
+  readiness 30; about 25% of the 452 repo unit tests), written by separate writers and checked by
+  independent reviewers against several blind scratch references (each test passes on a reference
+  that follows the contract; all fail red against the repo). The hold-out has no e2e or tooling
+  part: e2e needs the repo's Playwright harness, and the tooling is fixed by the contract text.
+  sha256 at lock time, so the user can check that no agent changed them (names only; the content
+  stays outside the repo):
+  - `ho-market.test.js` af33b77663f34f8aae71466ed1b1339638d7404c383e4a1245178affc73c3c82
+  - `ho-oa.test.js` ee4ea8f3c94cccfee635b1cff98c168881bfa9a3802a81faa7af6b5eddfa631a
+  - `ho-readiness.test.js` c7831f49f6a29db9802e74251e73d99647544c47e1960ab3117a14b23de834e6
+  - `ho-rng-answer.test.js` 5b53710ef5859941f17fb216448a6ac282bf2f36729f8c35e73861ee931bcbbb
+  - `ho-srs-bank.test.js` 27caa1071224047aa5a7ec90ff241bb30c8cf0d942d67c47c15e71c5b4bd3edf
+- **Scratch references archived.** The Red and hold-out reviewers' reference implementations
+  (and the contract-phase reference scripts) were moved into
+  `holdout-tests/_archive/*.tgz` (hidden by rule H1; not `*.test.js`, so `test:holdout` ignores
+  them) and deleted from `/private/tmp`.
+- **The hook fails closed.** The settings command is the §M6 one followed by `|| exit 2`, so a crash
+  of `guard-locked.js` (node exit 1, which Claude Code treats as "allow") denies the tool instead.
+  This is the only deviation from the §M6 settings JSON.
+- **Gatekeeper lock checks.** Deleting `tests/LOCK.json` would turn the hook's L rules off and make
+  `lock:verify` report "pre-lock". So every milestone gatekeeper also checks that
+  `tests/LOCK.json` exists, that `git rev-parse v4-red` still equals the sha recorded at lock
+  time, and that `git status` is clean for every lockable root.
 
 **Concurrent storage writes**
 
@@ -441,3 +613,92 @@ writers and reviewers, settled before the pre-lock tag)
   contract.
 - **OA timers rely on `Date.now()`** deltas plus `setInterval`, so Playwright's `page.clock` can
   drive them. Wall-clock jumps (sleep or wake) can end a run early. That is acceptable.
+- **prep.html 404s scripts until their milestones land.** From M0 it carries the full §A5 tag
+  list, so until M1, M4, M5 and M6 add their files, each load requests up to 8 missing scripts
+  and logs `net::ERR_FILE_NOT_FOUND` for each (the e2e sweep ignores `net::ERR`). In exchange,
+  later milestones only add files and never touch the tags.
+- **KaTeX fonts in all three formats.** Chrome only fetches the woff2 files (about 0.3 MB). The
+  woff and ttf files (about 0.9 MB) stay so the stock `katex.min.css` works unedited.
+  `check:no-bank` exempts `vendor/`.
+
+**M0 tooling**
+
+- **The allowlist regexes have a hole.** Both regexes accept an unquoted `HOLDOUT_DIR=\S+` value
+  and a double-quoted one, and the shell still interprets `;`, `$(…)` and backticks inside those.
+  So `HOLDOUT_DIR=x;cat${IFS}<hold-out file>;true npm run test:holdout` matches
+  `HOLDOUT_ALLOW_RE`, and `HOLDOUT_DIR="$(…)" npm test` matches `NPM_ALLOW_RE`. Both are allowed.
+  `guard-locked.js` keeps the §M6 regexes verbatim, as the contract requires. Only the implementer
+  prompts and the cheese audit cover this. A contract amendment would close it, for example
+  `[^\s;&|<>()$\x60]+` for the unquoted value and no `$(` or backtick inside double quotes. (§M6)
+- **The hook does not resolve symlinks.** `guardDecision` is pure, and the CLI passes the root as
+  given. An edit through a symlinked path that leads into `tests/` (e.g. `/tmp/link/x`, where
+  `/tmp/link` points to the repo's `tests/`) passes L1. `lock:verify` catches the result. (§M6)
+- **`lock:restore` before M0 is committed would delete M0's own scripts.** §M4 deletes every file
+  under `scripts/` that HEAD does not track. Until the orchestrator commits M0, that means the
+  whole new `scripts/` directory. Run it only on a committed, verified HEAD, as §M1 says. (§M4)
+- **`check:no-bank` passes outside git.** In a copy without `.git/` nothing is tracked, so there is
+  nothing to check. The rule protects what git would commit. (§M3)
+
+**M0 tooling review: residual risks the contract allows** (found by probing the hook CLI with
+126 payloads and the lock with real git in throwaway clones; the implementation keeps the §M6
+regexes and the §M4 steps as written)
+
+- **Deleting `tests/LOCK.json` switches everything off.** This is the biggest gap.
+  - The hook's `locked` is "LOCK.json exists", and `lock:verify` step 1 exits 0 ("pre-lock")
+    without it.
+  - Any unmatched delete therefore unlocks tests/ and makes `npm run check` pass:
+    `find . -name LOCK.json -delete`, `git reset --hard v4-red-pre`, a script run by path, or code
+    in `prep/*.js` run by `npm test`.
+  - Until the contract changes, the gatekeeper must also check that `tests/LOCK.json` exists and
+    that `git status --porcelain -- tests scripts` is empty.
+  - Possible amendment: once tag `v4-red` exists, a missing LOCK.json fails verify, and the hook
+    counts the tag (a file check of `.git/refs/tags/v4-red` or `packed-refs`) as locked. (§M4, §M6)
+- **The hook fails open if its script breaks.** Claude Code blocks only on exit 2. If
+  `scripts/guard-locked.js` is deleted or broken through any gap below, node exits 1 and every
+  tool runs. Possible amendment: end the settings command with `|| exit 2`. (§M6)
+- **L2 mention gaps.** MENTION_RE needs `/`, whitespace, a quote or the end after
+  `tests`, `scripts` or `.claude`. These commands are allowed:
+  - `cd tests;echo x > a.test.js` and `cd tests&&echo x>a.test.js`;
+  - variables such as `T=tests; echo x > $T/a`;
+  - split quotes such as `te""sts/` and globs such as `test?/` or `t*s/`;
+  - in the main session, a `cd tests` in one Bash call followed by `echo x > a.test.js` in the
+    next, because `cd` persists there.
+- **L2 verb gaps.** WRITE_VERB_RE misses:
+  - `git -C . checkout …` (the verb must follow `git` directly), `git switch`, `read-tree -u`,
+    `checkout-index` and `update-ref`;
+  - `find … -delete`, `ditto`, `tar -x -C tests`, `unzip`, `curl -o`, `ruby -e`, `nvim`, `code`,
+    `rm -rf *` and `eval "$(… | base64 -d)"`;
+  - `npm pkg set scripts.x=…`, `npm install` and `npm version`, which all write `package.json`;
+  - `git apply` or `patch` when only the patch file names the paths, and scripts run by path
+    (`node /tmp/w.js tests/a`).
+- **Path aliases.** The hook is pure, so these spellings are not resolved and pass L1 and H1:
+  - macOS firmlinks: `/System/Volumes/Data/Users/…`, and `/Volumes/Macintosh HD/…` (a symlink to
+    `/`). For example, Read of
+    `/System/Volumes/Data/Users/nbist/Documents/Quant Prep/holdout-tests/canary.txt` is allowed.
+  - Symlinks made without naming a locked path, such as `ln -s "$PWD" /tmp/r` and then Write
+    `/tmp/r/tests/x`.
+  - Relative Grep or Glob paths when the session cwd is not the root (the hook resolves them
+    against the root). (§M6)
+- **Writers outside the matcher.**
+  - `~/.claude/settings.json` (user level, not `<root>/.claude/`) can be written with Write, for
+    example to set `disableAllHooks`.
+  - MCP tools that read local files, and tools other than Bash that run shell commands, are not
+    in the matcher.
+  - `.git/` is open: hooks, config, refs. `git tag -f v4-red` can move the lock tag, and check
+    (a) only reads its subject. The orchestrator should record `git rev-parse v4-red` when it
+    locks and compare it at every gate. lock.js now ignores replace refs, fsmonitor and repo
+    hooks.
+- **The hold-out can leak without being named.**
+  - `NODE_OPTIONS='--require /tmp/x.js' npm run test:holdout` is allowed by the hook. So is code
+    in `prep/*.js`, which the hold-out tests load. Either can read the test file from inside the
+    test process (`process.argv`, `require.main`) and copy it out.
+  - `NODE_OPTIONS=--test-isolation=none` prints the tests' own console output.
+  - §M5 passes the environment through, so `test-holdout.js` does not strip `NODE_OPTIONS`.
+  - The allowlists' `HOLDOUT_DIR=` value gap (above) is the same kind of leak.
+- **Code under test runs with full file access.** `npm test` runs implementation modules and
+  `npm run e2e` runs `node_modules/playwright`. Either can rewrite tests, delete LOCK.json or
+  monkeypatch `node:assert`. A static scan of `prep/*.js` for `require` calls other than the §A5
+  ones, plus code review, are the only guards.
+- **Ignored files under `tests/` pass the pre-lock check.** §M4 uses `--exclude-standard`, so a
+  file ignored through `.git/info/exclude` gets locked. It is not committed, so a fresh clone
+  fails verify. Such a file only adds tests, so it cannot weaken one.

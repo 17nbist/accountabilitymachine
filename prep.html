@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Prep · Accountability Machine</title>
+  <link rel="stylesheet" href="prep.css">
+  <link rel="stylesheet" href="vendor/katex/katex.min.css">
+</head>
+<body>
+  <header class="prep-header">
+    <h1>Prep</h1>
+    <nav class="tabs" id="tabs" role="tablist" aria-label="Prep sections" hidden>
+      <button class="tab" type="button" role="tab" data-tab="today" id="tabbtn-today" aria-controls="tab-today" aria-selected="false">Today</button>
+      <button class="tab" type="button" role="tab" data-tab="practice" id="tabbtn-practice" aria-controls="tab-practice" aria-selected="false">Practice</button>
+      <button class="tab" type="button" role="tab" data-tab="cards" id="tabbtn-cards" aria-controls="tab-cards" aria-selected="false">Cards</button>
+      <button class="tab" type="button" role="tab" data-tab="oa" id="tabbtn-oa" aria-controls="tab-oa" aria-selected="false">OA</button>
+      <button class="tab" type="button" role="tab" data-tab="market" id="tabbtn-market" aria-controls="tab-market" aria-selected="false">Market</button>
+      <button class="tab" type="button" role="tab" data-tab="dashboard" id="tabbtn-dashboard" aria-controls="tab-dashboard" aria-selected="false">Dashboard</button>
+      <button class="tab" type="button" role="tab" data-tab="library" id="tabbtn-library" aria-controls="tab-library" aria-selected="false">Library</button>
+    </nav>
+  </header>
+
+  <main class="prep-main">
+    <div id="bank-missing" class="bank-missing" hidden>
+      <h2>Bank not built</h2>
+      <p>Run <code>npm run bank:build</code> in the extension folder, then reload this page.</p>
+      <p class="muted">The build writes <code>bank/</code>, which stays local and is never committed.</p>
+    </div>
+
+    <section id="tab-today" class="panel" role="tabpanel" aria-labelledby="tabbtn-today" hidden></section>
+    <section id="tab-practice" class="panel" role="tabpanel" aria-labelledby="tabbtn-practice" hidden></section>
+    <section id="tab-cards" class="panel" role="tabpanel" aria-labelledby="tabbtn-cards" hidden></section>
+    <section id="tab-oa" class="panel" role="tabpanel" aria-labelledby="tabbtn-oa" hidden></section>
+    <section id="tab-market" class="panel" role="tabpanel" aria-labelledby="tabbtn-market" hidden></section>
+    <section id="tab-dashboard" class="panel" role="tabpanel" aria-labelledby="tabbtn-dashboard" hidden></section>
+    <section id="tab-library" class="panel" role="tabpanel" aria-labelledby="tabbtn-library" hidden></section>
+  </main>
+
+  <!-- Load order: V4-CONTRACTS §A5. prep/*.js and prep-loader.js arrive in later milestones;
+       until then their tags 404 and prep-ui.js checks each global with typeof. -->
+  <script src="vendor/katex/katex.min.js"></script>
+  <script src="vendor/katex/contrib/auto-render.min.js"></script>
+  <script src="vendor/marked.min.js"></script>
+  <script src="vendor/purify.min.js"></script>
+  <script src="log.js"></script>
+  <script src="shared.js"></script>
+  <script src="practice.js"></script>
+  <script src="prep/rng.js"></script>
+  <script src="prep/answer.js"></script>
+  <script src="prep/bank.js"></script>
+  <script src="prep/srs.js"></script>
+  <script src="prep/oa.js"></script>
+  <script src="prep/market.js"></script>
+  <script src="prep/readiness.js"></script>
+  <script src="prep-loader.js"></script>
+  <script src="prep-ui.js"></script>
+</body>
+</html>

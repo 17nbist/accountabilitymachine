@@ -1,0 +1,119 @@
+/* prep.html: full-page Prep UI. Same dark palette as the side panel (styles.css). */
+
+* {
+  box-sizing: border-box;
+}
+
+/* `hidden` must win over any display rule below (V4-CONTRACTS §J: hidden = attribute or none). */
+[hidden] {
+  display: none !important;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  font-size: 14px;
+  line-height: 1.5;
+  background: #0f1117;
+  color: #e2e5ec;
+}
+
+code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.92em;
+  background: #1c2030;
+  border: 1px solid #2b3145;
+  border-radius: 4px;
+  padding: 1px 5px;
+}
+
+.muted {
+  color: #8a93a8;
+}
+
+/* ---------- header and tabs ---------- */
+
+.prep-header {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  flex-wrap: wrap;
+  padding: 10px 24px;
+  background: #0f1117;
+  border-bottom: 1px solid #2b3145;
+}
+
+.prep-header h1 {
+  margin: 0;
+  font-size: 17px;
+  font-weight: 700;
+}
+
+.tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.tab {
+  padding: 6px 14px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: transparent;
+  color: #aab6d9;
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.tab:hover {
+  background: #161a24;
+  color: #e2e5ec;
+}
+
+.tab[aria-selected="true"] {
+  background: #1c2030;
+  border-color: #3b4a7a;
+  color: #e2e5ec;
+}
+
+.tab:focus-visible {
+  outline: 2px solid #5b7cfa;
+  outline-offset: 1px;
+}
+
+/* ---------- main area ---------- */
+
+.prep-main {
+  max-width: 960px;
+  margin: 0 auto;
+  padding: 20px 24px 48px;
+}
+
+/* A shown panel always has a box, even before its tab has content, so it counts as visible. */
+.panel {
+  min-height: 240px;
+}
+
+.bank-missing {
+  margin: 40px auto;
+  max-width: 560px;
+  padding: 20px 24px;
+  background: #161a24;
+  border: 1px solid #2b3145;
+  border-left: 3px solid #e0a84e;
+  border-radius: 10px;
+}
+
+.bank-missing h2 {
+  margin: 0 0 8px;
+  font-size: 18px;
+}
+
+.bank-missing p {
+  margin: 6px 0;
+}

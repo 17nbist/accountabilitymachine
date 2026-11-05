@@ -1,0 +1,83 @@
+[
+  {
+    "key": "greenbook",
+    "title": "Green Book",
+    "folder": "00-user-supplied",
+    "file": "00-user-supplied/zhou-practical-guide-quant-finance-interviews-green-book.pdf",
+    "manifestSlug": "zhou-practical-guide-quant-finance-interviews-green-book",
+    "area": "probability",
+    "priority": 1
+  },
+  {
+    "key": "stat110",
+    "title": "Stat 110",
+    "folder": "01-probability",
+    "file": "01-probability/stat110/strategic_practice_and_homework_*.pdf",
+    "manifestSlug": "stat110",
+    "area": "probability",
+    "priority": 2
+  },
+  {
+    "key": "bh",
+    "title": "Blitzstein & Hwang",
+    "folder": "01-probability",
+    "file": "01-probability/stat110/selected_solutions_blitzstein_hwang_probability_01.pdf",
+    "manifestSlug": "selected_solutions_blitzstein_hwang_probability_01",
+    "area": "probability",
+    "priority": 3
+  },
+  {
+    "key": "janestreet",
+    "title": "Jane Street P&M",
+    "folder": "02-quant-interview",
+    "file": "02-quant-interview/jane-street/jane-street-probability-and-markets-guide.pdf",
+    "manifestSlug": "jane-street-probability-and-markets-guide",
+    "area": "probability",
+    "priority": 4
+  },
+  {
+    "key": "mit1805",
+    "title": "MIT 18.05",
+    "folder": "01-probability",
+    "file": "01-probability/mit-1805/pdfs/*.pdf",
+    "manifestSlug": "mit-1805",
+    "area": "statistics",
+    "priority": 5
+  },
+  {
+    "key": "mit6041",
+    "title": "MIT 6.041",
+    "folder": "01-probability",
+    "file": "01-probability/mit-6041/pdfs/*.pdf",
+    "manifestSlug": "mit-6041",
+    "area": "probability",
+    "priority": 6
+  },
+  {
+    "key": "conroy",
+    "title": "Conroy dice",
+    "folder": "02-quant-interview",
+    "file": "02-quant-interview/conroy-dice-problems/conroy-collection-of-dice-problems.pdf",
+    "manifestSlug": "conroy-collection-of-dice-problems",
+    "area": "probability",
+    "priority": 7
+  },
+  {
+    "key": "winkler",
+    "title": "Winkler",
+    "folder": "02-quant-interview",
+    "file": "02-quant-interview/winkler-mathematical-puzzles/winkler-mathematical-puzzles-revised-ed.pdf",
+    "manifestSlug": "winkler-mathematical-puzzles-revised-ed",
+    "area": "brainteaser",
+    "priority": 8
+  },
+  {
+    "key": "mit18s096",
+    "title": "MIT 18.S096",
+    "folder": "02-quant-interview",
+    "file": "02-quant-interview/mit-18s096/problem-sets/*.pdf",
+    "manifestSlug": "mit-18s096",
+    "area": "finance",
+    "priority": 9
+  }
+]

@@ -5,3 +5,4 @@ e2e/out/
 bank/
 bank-build/.cache/
 bank-build/sim/items/
+.test-staging/

@@ -603,7 +603,7 @@ async function s11_backgroundWorker() {
   assert(when.getHours() === 21 && when.getMinutes() === 0, `nudge at 21:00 local, got ${when}`);
   // (bg startup logs were wiped by the clearStorage() calls above; the live alarm is the proof.)
   const perms = await util.evaluate(() => chrome.runtime.getManifest());
-  assert(perms.version === "3.0.0" && perms.host_permissions.includes("https://arithmetic.zetamac.com/*"), "manifest v3 + zetamac host permission");
+  assert(perms.version === "4.0.0" && perms.host_permissions.includes("https://arithmetic.zetamac.com/*"), "manifest v3 + zetamac host permission");
   assert(perms.content_scripts.some(c => c.matches[0].includes("zetamac") && c.js.includes("practice.js")), "zetamac content script registered");
 }
 
