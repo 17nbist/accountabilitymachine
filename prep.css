@@ -762,3 +762,226 @@ input.oa-input {
   color: #9ad19a;
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
 }
+
+/* ---------- Market tab (spec §6 F4, §J5) ---------- */
+
+.mm-blurb {
+  margin: 4px 0 6px;
+}
+
+.mm-rules {
+  margin: 0 0 4px;
+}
+
+.mm-round {
+  color: #aab6d9;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.mm-desc {
+  margin: 0 0 10px;
+}
+
+.mm-revealed {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  min-height: 32px;
+}
+
+.mm-revealed-label {
+  margin-right: 4px;
+  color: #8a93a8;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.mm-unit {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 28px;
+  height: 28px;
+  padding: 0 6px;
+  border: 1px solid #3b4a7a;
+  border-radius: 6px;
+  background: #1c2030;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.mm-unit-cards {
+  background: #e8eaf0;
+  border-color: #c9cede;
+  color: #1b1f2a;
+}
+
+.mm-unit-coins {
+  border-radius: 50%;
+}
+
+.mm-book {
+  margin: 10px 0 0;
+  color: #aab6d9;
+  font-variant-numeric: tabular-nums;
+}
+
+.mm-form {
+  margin: 14px 0 0;
+  padding: 12px 14px;
+  border: 1px solid #2b3145;
+  border-radius: 10px;
+  background: #121620;
+}
+
+.mm-quote {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 10px 14px;
+}
+
+.mm-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.mm-field-label {
+  color: #8a93a8;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+input.mm-input {
+  width: 110px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 16px;
+  font-variant-numeric: tabular-nums;
+}
+
+.mm-width {
+  margin: 8px 0 0;
+}
+
+.mm-error {
+  margin: 10px 0 0;
+  padding: 8px 12px;
+  border: 1px solid #5a2a2a;
+  border-radius: 8px;
+  background: #241414;
+  color: #f0b0b0;
+}
+
+.mm-notice {
+  margin: 10px 0 0;
+  color: #e0a84e;
+}
+
+.mm-head {
+  margin: 18px 0 6px;
+  color: #8a93a8;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.mm-fills {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.mm-fills li {
+  display: flex;
+  gap: 8px;
+  margin: 3px 0;
+}
+
+.mm-fill-round {
+  min-width: 28px;
+  color: #8a93a8;
+  font-variant-numeric: tabular-nums;
+}
+
+.mm-fill-buy {
+  color: #9ad19a;
+}
+
+.mm-fill-sell {
+  color: #f0b48a;
+}
+
+.mm-fill.is-rejected {
+  color: #8a93a8;
+  text-decoration: line-through;
+}
+
+.mm-pass {
+  color: #8a93a8;
+}
+
+.mm-table-wrap {
+  overflow-x: auto;
+}
+
+.mm-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-variant-numeric: tabular-nums;
+}
+
+.mm-table th,
+.mm-table td {
+  padding: 5px 8px;
+  border-bottom: 1px solid #2b3145;
+  text-align: left;
+  white-space: nowrap;
+}
+
+.mm-table th {
+  color: #8a93a8;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.mm-row-units {
+  display: inline-flex;
+  gap: 4px;
+}
+
+.mm-row-units .mm-unit {
+  min-width: 22px;
+  height: 22px;
+  font-size: 12px;
+}
+
+.mm-v {
+  margin: 0 0 12px;
+  font-size: 18px;
+  font-weight: 700;
+}
+
+.mm-pnl-line {
+  margin: 12px 0 0;
+  font-variant-numeric: tabular-nums;
+}
+
+.mm-good-quoter {
+  margin: 12px 0 0;
+  padding: 10px 12px;
+  border-left: 3px solid #5b7cfa;
+  border-radius: 4px;
+  background: #1c2030;
+}
+
+.mm-explain {
+  margin: 12px 0 0;
+  padding-left: 18px;
+}

@@ -1,4 +1,4 @@
-// prep.html controller (V4-CONTRACTS §A5, §E6, §I, §J1, §J2, §J3, §J4, §J11). Not pure: it owns
+// prep.html controller (V4-CONTRACTS §A5, §E6, §I, §J1, §J2, §J3, §J4, §J5, §J11). Not pure: it owns
 // the DOM, reads the URL, fetches the bank and reads and writes chrome.storage.local. The whole
 // file is one IIFE so it adds no globals.
 //
@@ -7,8 +7,9 @@
 // Cards tabs (markdown + KaTeX, the numeric / mcq / free flows, auto and self grading, the
 // writes per answer, Check my reasoning, keyboard shortcuts, the session summary) with the
 // item=, source= and mistake= parameters. M4: the OA tab (the four timed simulators, their
-// results, oaRuns and the in-app zetamac entry) with the seed= parameter. Each tab's content is
-// rendered by RENDER[<tab id>]; Market (M5), Dashboard and Library (M6) fill in theirs later.
+// results, oaRuns and the in-app zetamac entry) with the seed= parameter. M5: the Market tab (the
+// seeded market-making game, its round table, fills and settlement, and the mmRuns write). Each
+// tab's content is rendered by RENDER[<tab id>]; Dashboard and Library (M6) fill in theirs later.
 // Every prep/*.js module is optional here (checked with typeof): a tab whose modules did not
 // load says so instead of rendering, and the page still reaches ready.
 (() => {
@@ -944,8 +945,7 @@
     panelEl.replaceChildren(h("p", { class: "panel-error", text: `This tab needs ${names.join(", ")}, which did not load.` }));
   }
 
-  // Tab renderers, awaited each time a tab is shown. Market (M5), Dashboard and Library (M6)
-  // are still empty.
+  // Tab renderers, awaited each time a tab is shown. Dashboard and Library (M6) are still empty.
   const RENDER = {};
 
   // Today: the due count and the settings (§J3). The drill banner arrives with M7.
@@ -1511,6 +1511,366 @@
     dot.setAttribute("r", "2.5");
     svg.append(line, dot);
     return svg;
+  }
+
+  // ---------- Market tab (spec §6 F4, §G, §I, §J5) ----------
+
+  // Three cards in the tab: setup (scenario, Start, the saved-games line), settlement (shown once
+  // the last round is played) and the game (round, revealed units, position and cash, the quote
+  // form, #mm-error, the fill messages and the round table). A game is
+  // createGame(kind, pageSeed()) with mixed bots and the default limits (§J1, §J5); every accepted
+  // quote is one submitQuote round, and the page keeps only the returned state. The game lives in
+  // memory: only a settled game is saved (runEntry appended to mmRuns, §I), so a reload or a new
+  // Start discards an unfinished one.
+  const M = mods.PrepMarket;
+  const MM_MODS = ["PrepMarket"];
+  const MM_KIND = {
+    dice: {
+      label: "Dice",
+      blurb: "V is the sum of 3 to 10 dice. One die is revealed after each round.",
+      describe: s => `${s.n} dice: V is the sum of their faces (${s.n} to ${6 * s.n}). One die is revealed after each round.`,
+    },
+    cards: {
+      label: "Cards",
+      blurb: "V is the sum of 3 to 8 cards dealt from one 52-card deck (A = 1, J = 11, Q = 12, K = 13). One card is revealed after each round.",
+      describe: s => `${s.n} cards dealt from one 52-card deck: V is the sum of their ranks (A = 1, J = 11, Q = 12, K = 13). One card is revealed after each round.`,
+    },
+    coins: {
+      label: "Coins",
+      blurb: "V is the number of heads in a run of fair coin flips. A batch of 2 to 5 flips is revealed after each round.",
+      describe: s => `${s.n} fair coin flips: V is the number of heads (0 to ${s.n}). ${s.batch} flips are revealed after each round.`,
+    },
+  };
+  const MM_SETTLE_KEYS = ["v", "pnl", "edge", "adverse", "trades", "maxPos"]; // dataset names (§J5)
+  const CARD_RANK = { 1: "A", 11: "J", 12: "Q", 13: "K" };
+
+  let mm = null; // the tab's elements, the stored runs and the current game; built on first show
+
+  RENDER.market = async panelEl => {
+    const miss = missingFor(MM_MODS);
+    if (miss.length) return renderMissing(panelEl, miss);
+    if (!mm) mm = buildMarket(panelEl);
+    const { mmRuns } = await store.get("mmRuns"); // re-read at every tab show (§I)
+    mm.runs = asList(mmRuns);
+    renderMMSetup();
+  };
+
+  // Numbers for display, with a real minus sign: `dp` decimals at most, or else 12 significant
+  // digits, which hides float tails such as 20.999999999999996 in sums of decimal prices.
+  function mmNum(x, dp) {
+    const s = String(Number(dp === undefined ? x.toPrecision(12) : x.toFixed(dp)));
+    return s.startsWith("-") ? `−${s.slice(1)}` : s;
+  }
+  const mmSigned = (x, dp) => (x > 0 ? `+${mmNum(x, dp)}` : mmNum(x, dp));
+
+  // A die face, a card rank (A, 2 … 10, J, Q, K) or a coin flip (H / T).
+  function mmUnit(kind, v) {
+    if (kind === "coins") return v === 1 ? "H" : "T";
+    if (kind === "cards") return CARD_RANK[v] || String(v);
+    return String(v);
+  }
+  const mmChip = (kind, v) => h("span", { class: `mm-unit mm-unit-${kind}`, title: kind === "dice" ? null : String(v), text: mmUnit(kind, v) });
+
+  // The units round i revealed: one die or card, or the i-th batch of flips (the last may be short).
+  function mmRoundUnits(state, i) {
+    const size = state.kind === "coins" ? state.batch : 1;
+    return state.revealed.slice(i * size, (i + 1) * size);
+  }
+
+  function buildMarket(panelEl) {
+    const u = { runs: [], game: null };
+
+    // Setup.
+    u.kind = h("select", { id: "mm-scenario", "aria-label": "Scenario" },
+      M.SCENARIOS.map(k => h("option", { value: k, text: MM_KIND[k].label })));
+    u.kind.addEventListener("change", renderMMSetup);
+    u.blurb = h("p", { class: "muted mm-blurb" });
+    u.rules = h("p", { class: "muted small mm-rules" });
+    u.startBtn = h("button", { type: "button", id: "mm-start", class: "btn btn-primary", text: "Start game", onclick: () => startMMGame() });
+    u.history = h("span", { class: "muted small" });
+    u.setup = h("section", { class: "card mm-setup" },
+      h("h2", { text: "Market making" }),
+      h("div", { class: "toolbar" }, h("label", { for: "mm-scenario", text: "Scenario" }), u.kind),
+      u.blurb,
+      u.rules,
+      h("div", { class: "row" }, u.startBtn, u.history));
+
+    // Settlement.
+    u.settleV = h("p", { class: "mm-v" });
+    u.settleStats = h("dl", { class: "summary-grid" });
+    u.settlePnl = h("p", { class: "mm-pnl-line" });
+    u.goodQuoter = h("p", { id: "mm-good-quoter", class: "mm-good-quoter" });
+    u.saveNote = h("p", { class: "muted small", role: "status" });
+    u.againBtn = h("button", { type: "button", class: "btn btn-primary", text: "Play again", onclick: playMMAgain });
+    u.settlement = h("section", { id: "mm-settlement", class: "card mm-settlement", hidden: true },
+      h("h2", { text: "Settlement" }),
+      u.settleV, u.settleStats, u.settlePnl, u.goodQuoter,
+      h("ul", { class: "muted small mm-explain" },
+        h("li", { text: "Edge: for each trade, your price against E[V] at that moment, signed so that positive is good for you (you sold above it or bought below it)." }),
+        h("li", { text: "Adverse: what the informed bot's trades cost you against the true V. Positive is a loss." }),
+        h("li", { text: "Fair error: how far each round's fair value was from E[V | revealed]." })),
+      u.saveNote,
+      h("div", { class: "row" }, u.againBtn));
+
+    // Game.
+    u.title = h("span", { class: "session-title" });
+    u.round = h("span", { id: "mm-round", class: "mm-round" });
+    u.desc = h("p", { class: "mm-desc" });
+    u.revealed = h("div", { id: "mm-revealed", class: "mm-revealed", "aria-live": "polite" });
+    u.book = h("p", { class: "mm-book" });
+    // input#mm-<key> as u[key], inside its label.
+    const field = (key, label) => {
+      const inp = h("input", {
+        id: `mm-${key}`, type: "text", class: "mm-input", inputmode: "decimal", autocomplete: "off", spellcheck: "false",
+      });
+      inp.addEventListener("keydown", onMMKeydown);
+      inp.addEventListener("input", renderMMWidth);
+      u[key] = inp;
+      return h("label", { class: "mm-field", for: inp.id }, h("span", { class: "mm-field-label", text: label }), inp);
+    };
+    u.submitBtn = h("button", { type: "button", id: "mm-submit", class: "btn btn-primary", text: "Quote", onclick: submitMMQuote });
+    u.width = h("p", { class: "muted small mm-width" });
+    u.error = h("p", { id: "mm-error", class: "mm-error", role: "alert", hidden: true });
+    u.notice = h("p", { class: "mm-notice", role: "status", hidden: true });
+    u.form = h("div", { class: "mm-form" },
+      h("div", { class: "mm-quote" }, field("fair", "Fair value"), field("bid", "Bid"), field("ask", "Ask"), u.submitBtn),
+      u.width);
+    u.fills = h("ul", { id: "mm-fills", class: "mm-fills" });
+    u.fillsNone = h("p", { class: "muted small", text: "No trades yet. The bots trade as soon as you quote." });
+    u.rows = h("tbody");
+    u.table = h("table", { id: "mm-rounds", class: "mm-table" },
+      h("thead", {}, h("tr", {},
+        ["Round", "Fair", "Bid / ask", "E[V] then", "Fair error", "Trades", "Revealed", "Position", "Cash"]
+          .map(t => h("th", { scope: "col", text: t })))),
+      u.rows);
+    u.tableNone = h("p", { class: "muted small", text: "Played rounds appear here." });
+    u.gameEl = h("section", { class: "card mm-game", hidden: true },
+      h("div", { class: "session-bar" }, u.title, h("span", { class: "spacer" }), u.round),
+      u.desc, u.revealed, u.book, u.form, u.error, u.notice,
+      h("h3", { class: "mm-head", text: "Trades" }), u.fills, u.fillsNone,
+      h("h3", { class: "mm-head", text: "Rounds" }), h("div", { class: "mm-table-wrap" }, u.table), u.tableNone);
+
+    panelEl.replaceChildren(u.setup, u.settlement, u.gameEl);
+    return u;
+  }
+
+  // The setup card for the selected scenario: its blurb and limits, and the stored games of that
+  // scenario. Start reads "New game" while a game is unfinished, since it discards that game.
+  function renderMMSetup() {
+    const kind = mm.kind.value;
+    const playing = !!(mm.game && !mm.game.state.done);
+    mm.blurb.textContent = MM_KIND[kind].blurb;
+    mm.rules.textContent = `Each round you quote a fair value and a market: a bid below the ask, at most ${M.DEFAULT_MAX_WIDTH[kind]} wide. ` +
+      "A noise bot (a coin flip) and an informed bot (it knows this round's reveal and trades only when E[V] then lies outside your quote) " +
+      `each trade one unit against it. Position limit ±${M.DEFAULT_MAX_POS}: a trade past it is rejected. At the end your position settles at V.`;
+    mm.startBtn.textContent = playing ? "New game" : "Start game";
+    mm.startBtn.title = playing ? "Discard the game in progress (only finished games are saved) and start another" : "";
+    const label = MM_KIND[kind].label;
+    const runs = mm.runs.filter(r => isObj(r) && r.scenario === kind && Number.isFinite(r.pnl) && Number.isFinite(r.edge));
+    const last = runs[runs.length - 1];
+    mm.history.textContent = last
+      ? `${runs.length} saved ${label} game${runs.length === 1 ? "" : "s"} · last P&L ${mmNum(last.pnl)}, edge ${mmSigned(last.edge, 2)}`
+      : `No saved ${label} games yet.`;
+  }
+
+  function startMMGame() {
+    if (!mm) return;
+    const prev = mm.game;
+    if (prev && !prev.state.done) amLog("mm", "abandon", { kind: prev.state.kind, seed: prev.state.seed, round: prev.state.round });
+    const kind = mm.kind.value;
+    const state = M.createGame(kind, pageSeed()); // §J1: the URL seed for every game, else the clock
+    mm.game = { state };
+    mm.title.textContent = `${MM_KIND[kind].label} · seed ${state.seed}`;
+    mm.desc.textContent = MM_KIND[kind].describe(state);
+    for (const inp of [mm.fair, mm.bid, mm.ask]) inp.value = "";
+    hideMMError();
+    mm.notice.hidden = true;
+    mm.settlement.hidden = true;
+    for (const k of MM_SETTLE_KEYS) delete mm.settlement.dataset[k];
+    mm.goodQuoter.textContent = "";
+    mm.form.hidden = false;
+    mm.gameEl.hidden = false;
+    renderMMGame(mm.game);
+    renderMMSetup();
+    mm.fair.focus({ preventScroll: true });
+    amLog("mm", "start", { kind, seed: state.seed, n: state.n, rounds: state.rounds });
+  }
+
+  function playMMAgain() {
+    if (mm.game) mm.kind.value = mm.game.state.kind;
+    startMMGame();
+  }
+
+  // Enter in any of the three inputs submits; a held Enter submits once.
+  function onMMKeydown(e) {
+    if (e.key !== "Enter" || e.isComposing) return;
+    e.preventDefault();
+    if (!e.repeat) submitMMQuote();
+  }
+
+  function showMMError(text) {
+    mm.error.textContent = text;
+    mm.error.hidden = false;
+  }
+  function hideMMError() {
+    mm.error.textContent = "";
+    mm.error.hidden = true;
+  }
+
+  // The quote as typed goes to submitQuote, which validates it (§G3). A rejected quote shows its
+  // error and changes nothing; an accepted one plays the round and, after the last, settles.
+  function submitMMQuote() {
+    const g = mm && mm.game;
+    if (!g) return;
+    const r = M.submitQuote(g.state, { fair: mm.fair.value, bid: mm.bid.value, ask: mm.ask.value });
+    if (!r.ok) {
+      showMMError(r.error);
+      amLog("mm", "quote-rejected", { round: g.state.round, error: String(r.error).slice(0, 200) });
+      return;
+    }
+    g.state = r.state;
+    hideMMError();
+    const rejected = r.fills.filter(f => f.rejected).length;
+    mm.notice.textContent = rejected
+      ? `Position limit ±${g.state.maxPos}: ${rejected === 1 ? "one trade was" : `${rejected} trades were`} rejected this round.`
+      : "";
+    mm.notice.hidden = !rejected;
+    for (const inp of [mm.fair, mm.bid, mm.ask]) inp.value = "";
+    amLog("mm", "round", { round: g.state.round - 1, fills: r.fills.length, rejected, position: g.state.position });
+    renderMMGame(g);
+    if (g.state.done) settleMMGame(g);
+    else mm.fair.focus({ preventScroll: true });
+  }
+
+  // The live width of the typed bid and ask, against the scenario's maximum.
+  function renderMMWidth() {
+    const g = mm.game;
+    if (!g) return;
+    const num = inp => (inp.value.trim() === "" ? NaN : Number(inp.value));
+    const bid = num(mm.bid);
+    const ask = num(mm.ask);
+    const max = g.state.maxWidth;
+    mm.width.textContent = Number.isFinite(bid) && Number.isFinite(ask) && bid < ask
+      ? `Width ${mmNum(ask - bid)} of at most ${mmNum(max)} · mid ${mmNum((bid + ask) / 2)}`
+      : `Width at most ${mmNum(max)}.`;
+  }
+
+  function renderMMGame(g) {
+    const s = g.state;
+    mm.round.dataset.round = String(s.round);
+    mm.round.dataset.rounds = String(s.rounds);
+    mm.round.textContent = s.done ? `All ${s.rounds} rounds played` : `Round ${s.round + 1} of ${s.rounds}`;
+
+    const m = s.revealed.length;
+    const total = s.revealed.reduce((a, b) => a + b, 0);
+    mm.revealed.dataset.revealed = s.revealed.join(",");
+    const sumText = s.kind === "coins" ? `${total} head${total === 1 ? "" : "s"} in ${m}` : `sum ${total}`;
+    fill(mm.revealed,
+      h("span", { class: "mm-revealed-label", text: "Revealed" }),
+      m ? s.revealed.map(v => mmChip(s.kind, v)) : h("span", { class: "muted", text: "nothing yet" }),
+      h("span", { class: "muted small", text: m ? ` ${sumText} · ${s.n - m} still hidden` : ` · ${s.n} hidden` }));
+
+    mm.book.textContent = `Position ${mmSigned(s.position)} · Cash ${mmNum(s.cash)} · Largest |position| ${s.maxAbsPos} (limit ${s.maxPos})`;
+    mm.form.hidden = s.done;
+    renderMMWidth();
+
+    // Fill messages, in fill order, with the informed bot's passes between them.
+    const informed = s.bots === "informed" || s.bots === "mixed";
+    const lines = [];
+    for (const rec of s.history) {
+      for (const f of rec.fills) lines.push(mmFillLine(f, s));
+      if (informed && !rec.fills.some(f => f.bot === "informed")) {
+        lines.push(h("li", { class: "mm-pass" },
+          h("span", { class: "mm-fill-round", text: `R${rec.round + 1}` }),
+          h("span", { text: "Informed bot passed: its estimate was inside your quote." })));
+      }
+    }
+    fill(mm.fills, lines);
+    mm.fillsNone.hidden = s.history.length > 0;
+
+    // One row per played round, with the position and cash after it.
+    let pos = 0;
+    let cash = 0;
+    fill(mm.rows, s.history.map(rec => {
+      for (const f of rec.fills) {
+        if (f.rejected) continue;
+        pos += f.userSide === "buy" ? 1 : -1;
+        cash += f.userSide === "sell" ? f.price : -f.price;
+      }
+      const trades = rec.fills.map(f => (f.rejected ? `rejected: ${f.userSide} ${mmNum(f.price)}`
+        : `${f.userSide === "buy" ? "bought" : "sold"} ${mmNum(f.price)}`));
+      return h("tr", { class: "mm-round-row", "data-round": rec.round },
+        h("td", { text: String(rec.round + 1) }),
+        h("td", { text: mmNum(rec.fair) }),
+        h("td", { text: `${mmNum(rec.bid)} / ${mmNum(rec.ask)}` }),
+        h("td", { text: mmNum(rec.publicEV, 2) }),
+        h("td", { text: mmNum(Math.abs(rec.fair - rec.publicEV), 2) }),
+        h("td", { text: trades.length ? trades.join(", ") : "none" }),
+        h("td", {}, h("span", { class: "mm-row-units" }, mmRoundUnits(s, rec.round).map(v => mmChip(s.kind, v)))),
+        h("td", { text: mmSigned(pos) }),
+        h("td", { text: mmNum(cash) }));
+    }));
+    mm.table.hidden = s.history.length === 0;
+    mm.tableNone.hidden = s.history.length > 0;
+  }
+
+  function mmFillLine(f, s) {
+    const who = f.bot === "noise" ? "Noise bot" : "Informed bot";
+    const botDid = f.userSide === "sell" ? "bought" : "sold";
+    const price = mmNum(f.price);
+    const text = f.rejected
+      ? `${who} wanted to ${f.userSide === "sell" ? "buy" : "sell"} at ${price}: rejected, it would take you past ±${s.maxPos}.`
+      : `${who} ${botDid} at ${price}: you ${f.userSide === "sell" ? "sold" : "bought"} one, position ${mmSigned(f.positionAfter)}.`;
+    return h("li", {
+      class: `mm-fill mm-fill-${f.userSide}${f.rejected ? " is-rejected" : ""}`,
+      "data-bot": f.bot, "data-user-side": f.userSide, "data-price": String(f.price), "data-rejected": String(f.rejected),
+    }, h("span", { class: "mm-fill-round", text: `R${f.round + 1}` }), h("span", { text }));
+  }
+
+  // After the last round: the settlement card (§G5 metrics, §J5 attributes, the good-quoter line),
+  // then runEntry(state, now) appended to a fresh read of mmRuns on the page's write chain (§I).
+  function settleMMGame(g) {
+    const s = g.state;
+    const m = M.settle(s);
+    const el = mm.settlement;
+    el.dataset.v = String(m.V);
+    el.dataset.pnl = String(m.pnl);
+    el.dataset.edge = String(m.edge);
+    el.dataset.adverse = String(m.adverse);
+    el.dataset.trades = String(m.trades);
+    el.dataset.maxPos = String(m.maxPos);
+    mm.settleV.textContent = s.kind === "coins"
+      ? `V = ${m.V}: ${m.V} head${m.V === 1 ? "" : "s"} in ${s.n} flips.`
+      : `V = ${m.V}: ${s.outcomes.map(v => mmUnit(s.kind, v)).join(" + ")}${s.kind === "cards" ? ` (${s.outcomes.join(" + ")})` : ""}.`;
+    const stat = (label, value) => h("div", { class: "stat" }, h("dt", { text: label }), h("dd", { text: value }));
+    fill(mm.settleStats,
+      stat("P&L", mmSigned(m.pnl)),
+      stat("Edge", mmSigned(m.edge, 2)),
+      stat("Adverse", mmNum(m.adverse, 2)),
+      stat("Trades", String(m.trades)),
+      stat("Largest |position|", String(m.maxPos)),
+      stat("Mean fair error", m.meanFairError.toFixed(2)));
+    mm.settlePnl.textContent = `P&L = cash ${mmNum(m.cash)} + position ${mmSigned(m.position)} × V ${m.V} = ${mmNum(m.pnl)}.`;
+    mm.goodQuoter.textContent = M.goodQuoterLine(s);
+    mm.saveNote.textContent = "Saving…";
+    el.hidden = false;
+    renderMMSetup();
+    mm.againBtn.focus({ preventScroll: true });
+    amLog("mm", "settle", { kind: s.kind, seed: s.seed, pnl: m.pnl, edge: m.edge, trades: m.trades, maxPos: m.maxPos });
+
+    const entry = M.runEntry(s, Date.now());
+    let saved = false;
+    queueWrite("mm-run", async () => {
+      const { mmRuns } = await store.get("mmRuns");
+      const after = [...asList(mmRuns), entry];
+      await store.set({ mmRuns: after });
+      mm.runs = after;
+      saved = true;
+      amLog("mm", "saved", { kind: entry.scenario, pnl: entry.pnl, edge: entry.edge });
+    }).then(() => {
+      if (mm.game === g) mm.saveNote.textContent = saved ? "Saved to your market history." : "This game could not be saved.";
+      renderMMSetup();
+    });
   }
 
   async function showTab(id) {
