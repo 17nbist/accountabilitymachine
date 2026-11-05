@@ -798,6 +798,77 @@ implementer choices, not marked in `V4-CONTRACTS.md`)
   saves the default; a value `normalizeSettings` replaces is reported next to Save. The drill
   banner and `#drill-start` arrive with M7 (they need §H9). (§J3)
 
+**M2: dedup pass (`.cache/dedup.json`)** (spec §10 is silent on what counts as a duplicate)
+
+- **What counts.** Two practice items are duplicates when someone who has solved one has solved
+  the other: the same setup, the same asked quantity and the same answer. Rewording, renamed
+  variables, a relabelled story (coupons for die faces, balls for coins, one rank of card for
+  another, hours for minutes) and a suggested method (a Bayes table, an outcome list) do not make
+  items different. Different numbers do (100 floors against 102, 13/15/17 against 20/18/16, a
+  general `n` against a fixed 100), as do sibling sub-parts of one exercise that share a stem, and
+  two derivations of the same formula by different methods. Those near-duplicates stay in the bank.
+- **Which one is kept.** The item from the higher-priority source (`sources.json` `priority`);
+  within one source, the earlier item in `bank.json` order. The dropped item is keyed
+  `<key>/<locator>` with the reason `duplicate of <kept id>`.
+- **How candidates were found.** Every pair of practice items (scratch scripts, not committed):
+  word 3-gram shingle Jaccard on normalised prompts (LaTeX commands, punctuation and numbers
+  stripped) at least 0.5, or at least 0.3 with the same numeric answer value; then, because the
+  agents paraphrased prompts and that pass found no cross-source pair at all, TF-IDF cosine on
+  stemmed content words and number tokens, answer agreement (same non-trivial numeric value or
+  answer text), each item's best match in its known-overlap source in the 0.3 to 0.5 cosine band,
+  and an answer-plus-solution bigram pass. Every candidate pair was read and judged by hand.
+- **Result (first pass, 1510 items).** 742 candidates from the shingle pass (all within one
+  source, one real duplicate) plus about 2,500 pairs from the paraphrase passes; 28 confirmed
+  drops, leaving 1482 practice items: Green Book kept against Winkler 5, Stat 110 5, MIT 18.05 3,
+  MIT 6.041 2, Conroy 2, Jane Street 1, Blitzstein & Hwang 1, and within itself 1; Stat 110 kept
+  against MIT 6.041 1, Conroy 1, Blitzstein & Hwang 1, and within itself 2; Blitzstein & Hwang kept
+  against MIT 6.041 1; MIT 18.05 kept against MIT 6.041 1, and within itself 1. Only one Stat 110
+  and Blitzstein & Hwang pair is a true duplicate: the two sources mostly use different exercises,
+  or different parts of the same one.
+
+**M4: prep.html OA tab** (`prep-ui.js`, `prep.css`; implementer choices, not marked in
+`V4-CONTRACTS.md`)
+
+- **Layout.** Three cards. Setup: `select#oa-kind` (arith first, so it is the default),
+  `#oa-config` (shown only for arith), `#oa-neg-marking` (shown only for eighty), Start, and a
+  line with the best and count of the stored runs that have this kind and config. Run: kind and
+  seed, progress, `#oa-timer`, `#oa-question`, `#oa-input`, `#oa-feedback` and Quit. Results:
+  `#oa-results`. Between runs the setup and the last results stay on screen. Start hides the
+  results, and Run again starts the same kind and settings with a fresh `pageSeed()`. (§J1, §J4)
+- **Arith config.** Checkboxes for the four ops, number inputs for the four ranges and the
+  duration, filled with Zetamac's defaults, plus a "Zetamac defaults" reset button. A blank field
+  is read as `NaN`, so `configError` reports it (`Number("")` would quietly make it 0). While
+  `configError` returns an error, Start is disabled and the error text is shown as it is. Enter in
+  a config input starts the run. The config is kept only for the life of the page (no new storage
+  key), so a reload brings back the defaults. A line says whether the game counts as the default
+  (zetamac) game. (§F2, §I, §J4)
+- **During a run.** eighty, seq and ev give no right/wrong feedback per answer, as in a real OA;
+  the results list the misses. A parse error keeps the typed text and shows the parser's message;
+  the next edit clears it. A held Enter (`repeat`) is ignored, so it cannot skip several questions
+  at once, and arith ignores Enter. An answer that arrives after time is up but before the next
+  tick ends the run instead of counting, so the question on screen at time-up is never recorded.
+  The refocus on blur runs in a 0 ms timeout (after the focus change), and only while the OA tab
+  is shown. (§F7, §J4)
+- **Leaving the tab does not pause a run.** The clock is wall-clock time. If time runs out while
+  another tab is shown, the run finishes and is saved as usual, and coming back refocuses the
+  input. Closing or reloading the page discards a running run, the same as Quit. (§F7, §J4)
+- **The saved entry.** `ts` is the finish time (the time-up tick or the last answer), and
+  `secs = min(timeLimitSecs, floor(elapsed))`. The page appends the run, re-reads `oaRuns`, then
+  (default arith only) appends `zetamacEntry(run)` to a fresh read of `practiceLog`, capped at
+  `PRACTICE_LOG_CAP`, all on the page's one write chain. `#oa-results` is shown only after the
+  write, so `#oa-best` and `#oa-trend` already come from storage when it becomes visible. If the
+  `oaRuns` write fails, the results still show, with `data-best=""` and an empty trend, and say the
+  run was not saved. (§F7, §H10, §I, §J4)
+- **Results.** A score line, then correct / wrong / "skipped or not reached" / time (arith shows
+  score, time and seed), then notes on time up, negative marking, and whether an arith game went to
+  the practice log. "New personal best" shows when the score beats the best stored before this run,
+  or when it is the first run with these settings. The trend is a small SVG sparkline next to the
+  numbers. Each `li.oa-missed` shows the prompt, `→ answer.value`, and "(you: X)" or "(skipped)".
+  The number of questions not reached goes on a line under the list. arith has no missed list.
+  (§J4, spec §5)
+- **Logs.** `oa:start`, `oa:quit`, `oa:finish`, `oa:saved` and `oa:generate-failed`, and none per
+  question, so a fast arith game does not flood `amLogs_prep`. (§A5, §I)
+
 ## 2. Violations
 
 (none yet)
@@ -922,6 +993,11 @@ implementer choices, not marked in `V4-CONTRACTS.md`)
   corrected numeric or mcq card must store `check.resolved` as its answer. The cache data is the
   place to fix that (status `agreed` with a note, or a `resolved` equal to the answer), not the
   build.
+- **Dedup is a reviewed judgment, not a rule the build applies.** `dedup.json` lists hand-checked
+  drops; nothing recomputes it. A re-extracted chunk that renames a locator makes the old key
+  match nothing (the build warns "matches no item") and lets the duplicate back in, and new
+  chunks get no dedup until the pass is run again. Same-puzzle items with different numbers are
+  kept on purpose, so a learner can still meet a familiar puzzle twice with new parameters.
 
 **Concurrent storage writes**
 
@@ -1095,3 +1171,16 @@ regexes and the §M4 steps as written)
   `costs $5 and $10` stays text, but an unusual span (a `$` directly before a digit to close) is
   shown as plain text. Bank prompts use `$…$` consistently, and KaTeX errors render in place
   (`throwOnError: false`) instead of breaking the item.
+
+**M4: prep.html OA tab**
+
+- **`oaRuns` has no cap.** §I gives none, and `personalBest` is all-time over every stored run, so
+  a cap would change it. An entry is about 150 bytes (an arith entry a little more, because of its
+  config), so thousands of runs take a few hundred KB under `unlimitedStorage`.
+- **The arith box accepts expressions.** §J4 checks arith answers with `checkNumeric`, which parses
+  expressions, so typing `6*86` for `6 × 86` also moves on. Accepting digits only would be
+  stricter, but it would no longer be `checkNumeric`. Typing the expression is slower than typing
+  the number, so it gives no advantage.
+- **The arith config is not remembered.** Keeping it would need a new storage key, which §I does
+  not list. So a custom game has to be set up again after a reload. The default game, which is
+  the one the zetamac track logs, needs no setup.

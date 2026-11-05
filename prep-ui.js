@@ -1,15 +1,16 @@
-// prep.html controller (V4-CONTRACTS §A5, §E6, §I, §J1, §J2, §J3, §J11). Not pure: it owns the
-// DOM, reads the URL, fetches the bank and reads and writes chrome.storage.local. The whole file
-// is one IIFE so it adds no globals.
+// prep.html controller (V4-CONTRACTS §A5, §E6, §I, §J1, §J2, §J3, §J4, §J11). Not pure: it owns
+// the DOM, reads the URL, fetches the bank and reads and writes chrome.storage.local. The whole
+// file is one IIFE so it adds no globals.
 //
 // M0: the shell (tab chrome, fixture= and tab=, the bank-missing screen, the body data-ready /
 // data-bank-source flags). M3: the Today settings, and the item sessions of the Practice and
 // Cards tabs (markdown + KaTeX, the numeric / mcq / free flows, auto and self grading, the
 // writes per answer, Check my reasoning, keyboard shortcuts, the session summary) with the
-// item=, source= and mistake= parameters. Each tab's content is rendered by RENDER[<tab id>];
-// OA (M4), Market (M5), Dashboard and Library (M6) fill in theirs later. Every prep/*.js module
-// is optional here (checked with typeof): a tab whose modules did not load says so instead of
-// rendering, and the page still reaches ready.
+// item=, source= and mistake= parameters. M4: the OA tab (the four timed simulators, their
+// results, oaRuns and the in-app zetamac entry) with the seed= parameter. Each tab's content is
+// rendered by RENDER[<tab id>]; Market (M5), Dashboard and Library (M6) fill in theirs later.
+// Every prep/*.js module is optional here (checked with typeof): a tab whose modules did not
+// load says so instead of rendering, and the page still reaches ready.
 (() => {
   "use strict";
 
@@ -943,8 +944,8 @@
     panelEl.replaceChildren(h("p", { class: "panel-error", text: `This tab needs ${names.join(", ")}, which did not load.` }));
   }
 
-  // Tab renderers, awaited each time a tab is shown. OA (M4), Market (M5), Dashboard and
-  // Library (M6) are still empty.
+  // Tab renderers, awaited each time a tab is shown. Market (M5), Dashboard and Library (M6)
+  // are still empty.
   const RENDER = {};
 
   // Today: the due count and the settings (§J3). The drill banner arrives with M7.
@@ -1052,6 +1053,465 @@
       cardsView.root);
     await startSession(cardsView, cardsSpec(""));
   };
+
+  // ---------- OA tab (spec §5 F3, §F, §I, §J4) ----------
+
+  // Three views in the tab: the setup card (kind, config, Start), the run card (timer, question,
+  // input, Quit) and the results card (score, best, trend, missed). A run is generated whole at
+  // Start from generate(kind, pageSeed(), config); the clock is Date.now() deltas polled by a
+  // setInterval, so Playwright's page.clock drives it (§J4, §K2). Only finished runs are saved:
+  // time up, or the last question answered or skipped (§F7). Quit discards the run.
+  const O = mods.PrepOA;
+  const OA_MODS = ["PrepOA", "PrepAnswer", "PrepReadiness"];
+  const OA_TICK_MS = 200; // §J4: at most 250 ms
+  const OA_RANGES = ["addA", "addB", "mulA", "mulB"];
+  const OA_OPS = [["add", "Addition"], ["sub", "Subtraction"], ["mul", "Multiplication"], ["div", "Division"]];
+  const OA_KIND = {
+    arith: {
+      label: "Arithmetic (Zetamac)",
+      blurb: "Zetamac clone: + – × ÷ against the clock. A correct answer moves on by itself; there is no Enter key and no skip.",
+      hint: "Type the answer: it moves on as soon as it is right.",
+    },
+    eighty: {
+      label: "80 in 8 (Optiver-style)",
+      blurb: "80 mixed questions in 8 minutes: decimals, fractions, percentages, 2 and 3 digit products. Answers are exact.",
+      hint: "Enter submits. Enter on an empty box skips. A wrong answer moves on.",
+    },
+    seq: {
+      label: "Number sequences",
+      blurb: "15 sequences in 10 minutes: give the next term.",
+      hint: "Enter submits. Enter on an empty box skips. A wrong answer moves on.",
+    },
+    ev: {
+      label: "Expected value quickfire",
+      blurb: "20 dice, coin and card expectations in 5 minutes. Fractions such as 161/36 are fine; within 0.1% counts as right.",
+      hint: "Enter submits (fractions are fine). Enter on an empty box skips. A wrong answer moves on.",
+    },
+  };
+
+  let oa = null; // the tab's elements, the stored runs and the current run; built on first show
+
+  RENDER.oa = async panelEl => {
+    const miss = missingFor(OA_MODS);
+    if (miss.length) return renderMissing(panelEl, miss);
+    if (!oa) oa = buildOA(panelEl);
+    const { oaRuns } = await store.get("oaRuns"); // re-read at every tab show (§I)
+    oa.runs = asList(oaRuns);
+    renderOASetup();
+    if (oa.run) oa.input.focus({ preventScroll: true });
+  };
+
+  function buildOA(panelEl) {
+    const u = { runs: [], run: null, saving: false };
+
+    // Setup.
+    u.kind = h("select", { id: "oa-kind", "aria-label": "Simulator" },
+      O.KINDS.map(k => h("option", { value: k, text: OA_KIND[k].label })));
+    u.kind.addEventListener("change", renderOASetup);
+    u.blurb = h("p", { class: "muted oa-blurb" });
+    u.config = buildArithConfig(u);
+    u.negMarking = h("input", { type: "checkbox", id: "oa-neg-marking" });
+    u.negMarking.addEventListener("change", renderOASetup);
+    u.eightyConfig = h("div", { class: "oa-eighty-config" },
+      h("label", { class: "check", for: "oa-neg-marking" }, u.negMarking, " Negative marking: −1 for each wrong answer (skips cost nothing)"));
+    u.cfgError = h("p", { class: "oa-config-error", role: "alert", hidden: true });
+    u.startBtn = h("button", { type: "button", id: "oa-start", class: "btn btn-primary", text: "Start", onclick: () => startOARun() });
+    u.history = h("span", { class: "muted small" });
+    u.setup = h("section", { class: "card oa-setup" },
+      h("h2", { text: "OA simulators" }),
+      h("div", { class: "toolbar" }, h("label", { for: "oa-kind", text: "Simulator" }), u.kind),
+      u.blurb,
+      u.config,
+      u.eightyConfig,
+      u.cfgError,
+      h("div", { class: "row" }, u.startBtn, u.history));
+
+    // Run.
+    u.runKind = h("span", { class: "session-title" });
+    u.progress = h("span", { class: "muted oa-progress" });
+    u.timer = h("div", { id: "oa-timer", class: "oa-timer", role: "timer", "aria-label": "Time left" });
+    u.quitBtn = h("button", { type: "button", id: "oa-quit", class: "btn btn-quiet", text: "Quit", title: "Discard this run", onclick: quitOARun });
+    u.question = h("div", { id: "oa-question", class: "oa-question", "aria-live": "polite" });
+    u.input = h("input", {
+      id: "oa-input", type: "text", class: "oa-input", autocomplete: "off", spellcheck: "false",
+      "aria-label": "Your answer",
+    });
+    u.input.addEventListener("input", onOAInput);
+    u.input.addEventListener("keydown", onOAKeydown);
+    u.input.addEventListener("blur", onOABlur);
+    u.feedback = h("div", { id: "oa-feedback", class: "oa-feedback", "data-state": "", role: "status", "aria-live": "polite" });
+    u.hint = h("p", { class: "muted small oa-hint" });
+    u.runEl = h("section", { class: "card oa-run", hidden: true },
+      h("div", { class: "session-bar" }, u.runKind, u.progress, h("span", { class: "spacer" }), u.quitBtn),
+      u.timer, u.question, u.input, u.feedback, u.hint);
+
+    // Results.
+    u.resTitle = h("h2");
+    u.resScore = h("p", { class: "oa-score" });
+    u.resStats = h("dl", { class: "summary-grid" });
+    u.resNote = h("p", { class: "muted small" });
+    u.best = h("span", { id: "oa-best", class: "oa-best", "data-best": "" });
+    u.bestNote = h("span", { class: "oa-new-best" });
+    u.trend = h("span", { id: "oa-trend", class: "oa-trend", "data-points": "" });
+    u.missedHead = h("h3", { class: "oa-missed-head", text: "Missed questions" });
+    u.missed = h("ul", { id: "oa-missed", class: "oa-missed-list" });
+    u.missedNone = h("p", { class: "muted small" });
+    u.results = h("section", { id: "oa-results", class: "card oa-results", hidden: true },
+      u.resTitle, u.resScore, u.resStats, u.resNote,
+      h("p", { class: "oa-best-line" }, "Personal best: ", u.best, u.bestNote),
+      h("div", { class: "oa-trend-line" }, h("span", { class: "muted", text: "Trend (last 10 runs): " }), u.trend),
+      u.missedHead, u.missed, u.missedNone,
+      h("div", { class: "row" },
+        h("button", { type: "button", class: "btn btn-primary", text: "Run again", onclick: () => startOARun() })));
+
+    panelEl.replaceChildren(u.setup, u.runEl, u.results);
+    return u;
+  }
+
+  // #oa-config: the arith ops and ranges, filled with Zetamac's defaults (§F2, §J4). A blank
+  // field reads as NaN, so configError reports it instead of Number("") turning it into 0.
+  function buildArithConfig(u) {
+    u.opBoxes = OA_OPS.map(([op]) => h("input", { type: "checkbox", class: "oa-op", value: op, id: `oa-op-${op}` }));
+    const bound = (key, k) => h("input", {
+      type: "number", class: "oa-bound", id: `oa-${key}-${k ? "hi" : "lo"}`, min: 0, max: 10000, step: 1,
+      inputmode: "numeric", "aria-label": `${key} ${k ? "upper" : "lower"} bound`,
+    });
+    u.ranges = Object.fromEntries(OA_RANGES.map(key => [key, [bound(key, 0), bound(key, 1)]]));
+    u.duration = h("input", { type: "number", class: "oa-bound", id: "oa-duration", min: 10, max: 600, step: 1, inputmode: "numeric" });
+    u.defaultNote = h("span", { class: "muted small" });
+    const range = key => h("span", { class: "oa-range" }, "(", u.ranges[key][0], " to ", u.ranges[key][1], ")");
+    const el = h("div", { id: "oa-config", class: "oa-config" },
+      h("div", { class: "oa-ops" }, u.opBoxes.map((b, k) => h("label", { class: "check", for: b.id }, b, ` ${OA_OPS[k][1]}`))),
+      h("div", { class: "oa-config-grid" },
+        h("span", { text: "Addition" }), h("span", {}, range("addA"), " + ", range("addB")),
+        h("span", { text: "Multiplication" }), h("span", {}, range("mulA"), " × ", range("mulB")),
+        h("label", { for: "oa-duration", text: "Duration (seconds)" }), h("span", {}, u.duration)),
+      h("p", { class: "muted small", text: "Subtraction and division are addition and multiplication run backwards, as on Zetamac." }),
+      h("div", { class: "row" },
+        h("button", { type: "button", class: "btn btn-quiet", text: "Zetamac defaults", onclick: () => { fillArithConfig(u, O.defaultConfig("arith")); renderOASetup(); } }),
+        u.defaultNote));
+    el.addEventListener("input", renderOASetup);
+    el.addEventListener("change", renderOASetup);
+    el.addEventListener("keydown", e => {
+      if (e.key === "Enter" && e.target.tagName === "INPUT" && !e.repeat) {
+        e.preventDefault();
+        startOARun();
+      }
+    });
+    fillArithConfig(u, O.defaultConfig("arith"));
+    return el;
+  }
+
+  function fillArithConfig(u, c) {
+    for (const box of u.opBoxes) box.checked = c.ops.includes(box.value);
+    for (const key of OA_RANGES) u.ranges[key].forEach((inp, k) => { inp.value = String(c[key][k]); });
+    u.duration.value = String(c.durationSecs);
+  }
+
+  function readArithConfig() {
+    const num = inp => (inp.value.trim() === "" ? NaN : inp.value.trim());
+    const c = { ops: oa.opBoxes.filter(b => b.checked).map(b => b.value) };
+    for (const key of OA_RANGES) c[key] = oa.ranges[key].map(num);
+    c.durationSecs = num(oa.duration);
+    return c;
+  }
+
+  function oaConfigFor(kind) {
+    if (kind === "arith") return readArithConfig();
+    if (kind === "eighty") return { negativeMarking: oa.negMarking.checked };
+    return {};
+  }
+
+  // The setup card for the selected kind: its config inputs, the config error (Start is disabled
+  // while there is one), and the best of the stored runs with the same kind and config.
+  function renderOASetup() {
+    const kind = oa.kind.value;
+    const config = oaConfigFor(kind);
+    const err = O.configError(kind, config);
+    oa.blurb.textContent = OA_KIND[kind].blurb;
+    oa.config.hidden = kind !== "arith";
+    oa.eightyConfig.hidden = kind !== "eighty";
+    oa.cfgError.hidden = !err;
+    oa.cfgError.textContent = err || "";
+    oa.startBtn.disabled = !!err || !!oa.run || oa.saving;
+    if (kind === "arith") {
+      oa.defaultNote.textContent = err ? ""
+        : O.isDefaultConfig("arith", config)
+          ? "Zetamac's default game: the score goes into the practice log as a zetamac entry."
+          : "Custom game: only the default game is logged to the practice log.";
+    }
+    if (err) {
+      oa.history.textContent = "";
+      return;
+    }
+    const best = O.personalBest(oa.runs, kind, config);
+    const n = oa.runs.filter(r => isObj(r) && r.kind === kind && Number.isFinite(r.score) && O.sameConfig(kind, r.config, config)).length;
+    oa.history.textContent = n
+      ? `Best ${best} over ${n} saved run${n === 1 ? "" : "s"} with these settings.`
+      : "No saved runs with these settings yet.";
+  }
+
+  function setOATimer(secsLeft) {
+    oa.timer.dataset.secsLeft = String(secsLeft);
+    oa.timer.textContent = O.formatClock(secsLeft);
+    oa.timer.classList.toggle("is-low", secsLeft <= 10);
+  }
+
+  const oaElapsed = run => (Date.now() - run.startTs) / 1000;
+  const oaTimeUp = run => oaElapsed(run) >= run.gen.timeLimitSecs;
+
+  function startOARun() {
+    if (!oa || oa.run || oa.saving) return;
+    const kind = oa.kind.value;
+    const config = oaConfigFor(kind);
+    const err = O.configError(kind, config);
+    if (err) return renderOASetup();
+    const seed = pageSeed(); // §J1: the URL seed for every run on the page, else the clock
+    let gen;
+    try {
+      gen = O.generate(kind, seed, config);
+    } catch (e) {
+      // Only a generator that gave up (seq after 100 rejections) gets here: report, do not start.
+      const msg = String((e && e.message) || e);
+      oa.cfgError.textContent = `Could not generate this run: ${msg}`;
+      oa.cfgError.hidden = false;
+      amLog("oa", "generate-failed", { kind, seed, error: msg.slice(0, 200) });
+      return;
+    }
+    const run = { gen, kind, seed: gen.seed, config: gen.config, startTs: Date.now(), pos: 0, answers: [], timer: null, finished: false };
+    oa.run = run;
+    oa.setup.hidden = true;
+    oa.results.hidden = true;
+    oa.runKind.textContent = `${OA_KIND[kind].label} · seed ${run.seed}`;
+    oa.hint.textContent = OA_KIND[kind].hint;
+    oa.runEl.hidden = false;
+    setOATimer(gen.timeLimitSecs);
+    showOAQuestion(run);
+    run.timer = setInterval(() => oaTick(run), OA_TICK_MS);
+    oa.input.focus({ preventScroll: true });
+    amLog("oa", "start", { kind, seed: run.seed, config: run.config, questions: gen.questions.length, secs: gen.timeLimitSecs });
+  }
+
+  function oaTick(run) {
+    if (oa.run !== run || run.finished) return;
+    setOATimer(Math.max(0, Math.ceil(run.gen.timeLimitSecs - oaElapsed(run))));
+    if (oaTimeUp(run)) finishOARun(run);
+  }
+
+  function showOAQuestion(run) {
+    const q = run.gen.questions[run.pos];
+    oa.question.textContent = q.prompt;
+    oa.question.dataset.index = String(q.i);
+    oa.input.value = "";
+    setState(oa.feedback, "", "");
+    oa.progress.textContent = run.kind === "arith"
+      ? `Score ${run.answers.length}`
+      : `Question ${run.pos + 1} of ${run.gen.questions.length}`;
+  }
+
+  // Records the question on screen and moves on; after the last question the run is finished.
+  function recordOA(run, correct, given) {
+    const q = run.gen.questions[run.pos];
+    run.answers.push({ i: q.i, correct, given });
+    if (run.pos + 1 >= run.gen.questions.length) return finishOARun(run);
+    run.pos += 1;
+    showOAQuestion(run);
+  }
+
+  // arith: every input event (typing or pasting) checks the box and moves on when it is right.
+  function onOAInput() {
+    const run = oa.run;
+    if (!run || run.finished) return;
+    if (run.kind !== "arith") {
+      if (oa.feedback.dataset.state === "error") setState(oa.feedback, "", "");
+      return;
+    }
+    // An answer that lands after time is up (before the next tick noticed) is not counted.
+    if (oaTimeUp(run)) return finishOARun(run);
+    if (A.checkNumeric(oa.input.value, run.gen.questions[run.pos]).correct === true) {
+      recordOA(run, true, oa.input.value.trim());
+    }
+  }
+
+  // eighty, seq, ev: Enter submits; an empty Enter skips; a parse error stays on the question.
+  // arith has no submit key, so Enter does nothing there.
+  function onOAKeydown(e) {
+    const run = oa.run;
+    if (!run || run.finished || e.key !== "Enter" || e.isComposing) return;
+    e.preventDefault();
+    if (e.repeat || run.kind === "arith") return; // a held Enter must not skip a run of questions
+    if (oaTimeUp(run)) return finishOARun(run);
+    const raw = oa.input.value;
+    if (!raw.trim()) return recordOA(run, null, "");
+    const r = A.checkNumeric(raw, run.gen.questions[run.pos]);
+    if (r.expected === null) {
+      setState(oa.feedback, "error", "This question's answer does not parse, so it cannot be marked. Press Enter on an empty box to skip it.");
+      return;
+    }
+    if (r.correct === null) {
+      setState(oa.feedback, "error", `${String(r.error).replace(/\.$/, "")}. Fix it and press Enter again, or clear the box and press Enter to skip.`);
+      return;
+    }
+    recordOA(run, r.correct, raw.trim());
+  }
+
+  // The input keeps focus during a run (§J4): a blur refocuses it once the focus change is done,
+  // unless the run ended or another tab is now shown.
+  function onOABlur() {
+    const run = oa.run;
+    if (!run || run.finished) return;
+    setTimeout(() => {
+      if (oa.run === run && !run.finished && activeTab === "oa" && document.activeElement !== oa.input) {
+        oa.input.focus({ preventScroll: true });
+      }
+    }, 0);
+  }
+
+  function quitOARun() {
+    const run = oa.run;
+    if (!run || run.finished) return;
+    run.finished = true;
+    clearInterval(run.timer);
+    oa.run = null;
+    oa.runEl.hidden = true;
+    oa.setup.hidden = false;
+    renderOASetup();
+    amLog("oa", "quit", { kind: run.kind, seed: run.seed, answered: run.answers.length, secs: Math.floor(oaElapsed(run)) });
+  }
+
+  // Time up or the last question done: stop the clock, save the run (§F7, §J4), then show the
+  // results once the best and trend can be read back from storage.
+  async function finishOARun(run) {
+    if (oa.run !== run || run.finished) return;
+    run.finished = true;
+    clearInterval(run.timer);
+    const ts = Date.now();
+    const limit = run.gen.timeLimitSecs;
+    const elapsed = (ts - run.startTs) / 1000;
+    const timeUp = elapsed >= limit;
+    setOATimer(Math.max(0, Math.ceil(limit - elapsed)));
+    const sc = O.scoreRun(run.kind, run.answers, run.config);
+    const entry = {
+      ts, kind: run.kind, seed: run.seed, score: sc.score, total: sc.total,
+      secs: Math.min(limit, Math.floor(elapsed)), config: run.config,
+    };
+    oa.run = null;
+    oa.saving = true;
+    oa.runEl.hidden = true;
+    amLog("oa", "finish", { kind: run.kind, seed: run.seed, score: sc.score, total: sc.total, secs: entry.secs, timeUp });
+    let saved = null;
+    try {
+      saved = await saveOARun(entry);
+    } finally {
+      oa.saving = false;
+    }
+    if (saved) oa.runs = saved.after;
+    renderOAResults(run, sc, entry, saved, timeUp);
+    oa.setup.hidden = false;
+    renderOASetup();
+    oa.results.hidden = false;
+  }
+
+  // Appends the oaRuns entry and, for a default arith game, the in-app zetamac practice entry
+  // (§F7, §H10), each re-read right before it is written (§I). Resolves { before, after } (the
+  // stored runs around the append), or null when the oaRuns write failed.
+  async function saveOARun(entry) {
+    let saved = null;
+    await queueWrite("oa-run", async () => {
+      const { oaRuns } = await store.get("oaRuns");
+      const before = asList(oaRuns);
+      await store.set({ oaRuns: [...before, entry] });
+      const after = await store.get("oaRuns");
+      saved = { before, after: asList(after.oaRuns) };
+      const z = O.zetamacEntry(entry);
+      if (z) {
+        const { practiceLog } = await store.get("practiceLog");
+        await store.set({ practiceLog: R.appendCapped(asList(practiceLog), [z], R.PRACTICE_LOG_CAP) });
+      }
+      amLog("oa", "saved", { kind: entry.kind, score: entry.score, total: entry.total, zetamac: !!z });
+    });
+    return saved;
+  }
+
+  function renderOAResults(run, sc, entry, saved, timeUp) {
+    const { kind, config, gen } = run;
+    const el = oa.results;
+    el.dataset.score = String(sc.score);
+    el.dataset.total = String(sc.total);
+    oa.resTitle.textContent = `Results · ${OA_KIND[kind].label}`;
+    const stat = (label, value) => h("div", { class: "stat" }, h("dt", { text: label }), h("dd", { text: value }));
+    const time = `${fmtDuration(entry.secs)} of ${fmtDuration(gen.timeLimitSecs)}`;
+    const negative = kind === "eighty" && config.negativeMarking;
+    if (kind === "arith") {
+      oa.resScore.textContent = `${sc.score} correct`;
+      fill(oa.resStats, stat("Score", String(sc.score)), stat("Time", time), stat("Seed", String(run.seed)));
+    } else {
+      oa.resScore.textContent = `${sc.score} / ${sc.total}`;
+      fill(oa.resStats,
+        stat("Correct", String(sc.correct)),
+        stat("Wrong", String(sc.wrong)),
+        stat("Skipped or not reached", String(sc.skipped)),
+        stat("Time", time));
+    }
+    const notes = [timeUp ? "Time up." : "All questions done."];
+    if (negative) notes.push("Negative marking: score = correct − wrong.");
+    if (kind === "arith") {
+      notes.push(O.zetamacEntry(entry) ? "Logged to the practice log as an in-app zetamac score."
+        : "Custom settings: not logged to the practice log.");
+    }
+    if (!saved) notes.push("This run could not be saved, so it is not in your best or trend.");
+    oa.resNote.textContent = notes.join(" ");
+
+    const best = saved ? O.personalBest(saved.after, kind, config) : null;
+    const prevBest = saved ? O.personalBest(saved.before, kind, config) : null;
+    oa.best.dataset.best = best === null ? "" : String(best);
+    oa.best.textContent = best === null ? "–" : String(best);
+    oa.bestNote.textContent = saved && (prevBest === null || sc.score > prevBest) ? " · new personal best" : "";
+    const points = saved ? O.trend(saved.after, kind, config) : [];
+    oa.trend.dataset.points = points.join(",");
+    fill(oa.trend, sparkline(points), h("span", { class: "oa-trend-text", text: points.length ? points.join(", ") : "–" }));
+
+    const missed = run.answers.filter(a => a.correct !== true);
+    fill(oa.missed, missed.map(a => {
+      const q = gen.questions[a.i];
+      return h("li", { class: "oa-missed", "data-index": q.i },
+        h("span", { class: "oa-missed-q", text: q.prompt }),
+        h("span", { class: "oa-missed-a", text: ` → ${q.answer.value}` }),
+        h("span", { class: "muted", text: a.correct === false ? ` (you: ${a.given})` : " (skipped)" }));
+    }));
+    oa.missedHead.hidden = kind === "arith";
+    const unreached = kind === "arith" ? 0 : sc.total - run.answers.length;
+    oa.missedNone.textContent = kind === "arith" ? ""
+      : `${missed.length ? "" : "Nothing answered wrong or skipped. "}${unreached ? `${unreached} question${unreached === 1 ? "" : "s"} not reached.` : ""}`.trim();
+    oa.missedNone.hidden = !oa.missedNone.textContent;
+  }
+
+  // The trend as a small SVG line, oldest to newest (spec §5 "trend sparkline").
+  function sparkline(points) {
+    const NS = "http://www.w3.org/2000/svg";
+    const W = 160;
+    const H = 32;
+    const P = 3;
+    const svg = document.createElementNS(NS, "svg");
+    svg.setAttribute("class", "oa-spark");
+    svg.setAttribute("viewBox", `0 0 ${W} ${H}`);
+    svg.setAttribute("width", String(W));
+    svg.setAttribute("height", String(H));
+    svg.setAttribute("aria-hidden", "true");
+    if (!points.length) return svg;
+    const lo = Math.min(...points);
+    const hi = Math.max(...points);
+    const x = k => (points.length === 1 ? W / 2 : P + (k * (W - 2 * P)) / (points.length - 1));
+    const y = v => (hi === lo ? H / 2 : H - P - ((v - lo) * (H - 2 * P)) / (hi - lo));
+    const line = document.createElementNS(NS, "polyline");
+    line.setAttribute("points", points.map((v, k) => `${x(k).toFixed(1)},${y(v).toFixed(1)}`).join(" "));
+    const dot = document.createElementNS(NS, "circle");
+    dot.setAttribute("cx", x(points.length - 1).toFixed(1));
+    dot.setAttribute("cy", y(points[points.length - 1]).toFixed(1));
+    dot.setAttribute("r", "2.5");
+    svg.append(line, dot);
+    return svg;
+  }
 
   async function showTab(id) {
     if (!TAB_IDS.includes(id)) id = DEFAULT_TAB;

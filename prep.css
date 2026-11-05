@@ -591,3 +591,174 @@ a {
 .summary-weakest-line {
   margin: 14px 0 0;
 }
+
+/* ---------- OA tab (spec §5 F3, §J4) ---------- */
+
+.oa-blurb {
+  margin: 4px 0 10px;
+}
+
+.oa-config {
+  margin: 8px 0 4px;
+  padding: 10px 12px;
+  border: 1px solid #2b3145;
+  border-radius: 8px;
+}
+
+.oa-ops {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 16px;
+  margin-bottom: 10px;
+}
+
+.oa-config-grid {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  align-items: center;
+  gap: 8px 14px;
+}
+
+.oa-range {
+  white-space: nowrap;
+}
+
+input.oa-bound {
+  width: 84px;
+  padding: 4px 8px;
+}
+
+.oa-eighty-config {
+  margin: 8px 0 4px;
+}
+
+.oa-config-error {
+  margin: 8px 0 0;
+  color: #f0a0a0;
+}
+
+.oa-run {
+  text-align: center;
+}
+
+.oa-run .session-bar {
+  text-align: left;
+}
+
+.oa-timer {
+  margin: 4px 0 12px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 56px;
+  font-weight: 700;
+  line-height: 1.1;
+  font-variant-numeric: tabular-nums;
+}
+
+.oa-timer.is-low {
+  color: #f08080;
+}
+
+.oa-question {
+  min-height: 1.4em;
+  margin: 8px auto 16px;
+  max-width: 760px;
+  font-size: 30px;
+  font-weight: 600;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
+input.oa-input {
+  width: min(360px, 100%);
+  padding: 10px 14px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 26px;
+  text-align: center;
+}
+
+.oa-feedback {
+  min-height: 1.5em;
+  margin-top: 8px;
+}
+
+.oa-feedback[data-state="error"] {
+  color: #e0a84e;
+}
+
+.oa-hint {
+  margin: 10px 0 0;
+}
+
+.oa-results h2 {
+  margin: 0 0 6px;
+  font-size: 16px;
+}
+
+.oa-score {
+  margin: 0 0 12px;
+  font-size: 32px;
+  font-weight: 700;
+}
+
+.oa-best-line,
+.oa-trend-line {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin: 10px 0 0;
+}
+
+.oa-best {
+  font-weight: 700;
+}
+
+.oa-new-best {
+  color: #6fd39a;
+  font-weight: 600;
+}
+
+.oa-trend {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.oa-spark polyline {
+  fill: none;
+  stroke: #8fb0ff;
+  stroke-width: 1.6;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+}
+
+.oa-spark circle {
+  fill: #8fb0ff;
+}
+
+.oa-missed-head {
+  margin: 16px 0 6px;
+  color: #8a93a8;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.oa-missed-list {
+  margin: 0;
+  padding-left: 20px;
+}
+
+.oa-missed {
+  margin: 3px 0;
+}
+
+.oa-missed-q {
+  font-weight: 600;
+}
+
+.oa-missed-a {
+  color: #9ad19a;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
