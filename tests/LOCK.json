@@ -1,0 +1,91 @@
+{
+  "version": 1,
+  "algorithm": "sha256",
+  "created": "2026-11-05T04:46:15.478Z",
+  "files": {
+    "e2e/run.js": {
+      "sha256": "eb18ecebc5601cc555c4522292d107582fbff416919b6f44ab67083cf041665a"
+    },
+    "e2e/v4.js": {
+      "sha256": "a68e244bd3d02d643a1866e7c440b44b9a3e33109ce2d0814d04812e057fb440"
+    },
+    "package.json": {
+      "sha256": "a2757f90c467a18c5262adeca402a35a37dc06e294f7ee82d45c7cd43a9faa79"
+    },
+    "scripts/check-no-bank.js": {
+      "sha256": "f047dbaf70e252bb814b0f158b5ff382ae3625bb152f0e33c2dc95bbc71f66c0"
+    },
+    "scripts/check.js": {
+      "sha256": "37814f99f210fde148c644e93919e27aace5e84395d521b8f4ac1e2ee1029b79"
+    },
+    "scripts/guard-locked.js": {
+      "sha256": "e923964231f2c7792cc6a787db59669745838d3ab29a3217bc6b70c1b7f21838"
+    },
+    "scripts/holdout-reporter.js": {
+      "sha256": "25aa4ef7c0c5a8a9f12accfba99f7fa781144a50ae56486eb8a7e8fb97c43008"
+    },
+    "scripts/lock.js": {
+      "sha256": "b87e10dfa108b92b2b5ce65c063c18f2172df0866960b2386427ff3edfb04fa8"
+    },
+    "scripts/test-holdout.js": {
+      "sha256": "4c61cd8546627144cf525b1645e2166ddcba8fcb98db4880496d68dbbb93f4c5"
+    },
+    "tests/fixtures/bank-mini/README.md": {
+      "sha256": "1ca53c3cb80215b6d3812c994ab1b2ff5962f08b6d19d8b0dbb99604c0dd50b1"
+    },
+    "tests/fixtures/bank-mini/bank.json": {
+      "sha256": "9c911d9523b46ad3742b499468ee269fe45dcef7a00613149396730b6acba32f"
+    },
+    "tests/fixtures/bank-mini/decks/cpp.json": {
+      "sha256": "0a8c47fae5bc874cd4d54ae0f18efddb1de5afe641d356cbd53d2a91415673c8"
+    },
+    "tests/fixtures/bank-mini/decks/systems.json": {
+      "sha256": "6ea60ce6a75814143cb60a0aaa399bbb9aed9b12d83a57c42d6a738fabb4958f"
+    },
+    "tests/fixtures/bank-mini/library/index.json": {
+      "sha256": "d0925d4b44e03d0ec835561ba1fb0bdde8b46485b57bae6b3b4f9bb423ccdd5c"
+    },
+    "tests/fixtures/bank-mini/lists/neetcode150.json": {
+      "sha256": "d6f9a871294379a5e829c50faafe602b31e6808473dd8f959850d5e8870c0b88"
+    },
+    "tests/practice.test.js": {
+      "sha256": "a4f7aa63047839bc1bbf94cbd0a74f22bc54d2b85e5c529acbcd41baa69bab71"
+    },
+    "tests/static.test.js": {
+      "sha256": "2c5aef9169ea57eb13eae0e0d0baf964839d3b29fadfcfaba7d4ac7ff159f702"
+    },
+    "tests/tooling.test.js": {
+      "sha256": "715498dade4a992e56509f744057d711b3f5b7f1d72c4e47ed4792400d5e34c7"
+    },
+    "tests/v4-answer.test.js": {
+      "sha256": "3ce94a27fdfe836fd3658cba6577549a8b74e5c4909759b363732006d3ba2844"
+    },
+    "tests/v4-bank.test.js": {
+      "sha256": "d57f5f9284d3a3aa09948fcf3c2a824ba9095d1f8ba2bc2b4c57dffd5965749b"
+    },
+    "tests/v4-fixture.test.js": {
+      "sha256": "5ba95f31db8272d80e9f2faf05596b994823d44538e2e516c18b8d0aad60e740"
+    },
+    "tests/v4-market.test.js": {
+      "sha256": "0deafd8483fdc0a1c81cb8f45b12e11fc91c64da8fc9d8722e113906cb7291e8"
+    },
+    "tests/v4-oa.test.js": {
+      "sha256": "9c8e87ab61ff972fcc2e39400900a04867a0c5cd88ef51b830ed7847a151002e"
+    },
+    "tests/v4-practice.test.js": {
+      "sha256": "bab941ea5283a6d324d9dbe3b5b27550030c38a9a3c61da0a9fba660307c9bc3"
+    },
+    "tests/v4-readiness-buddy.test.js": {
+      "sha256": "e0794f451d95470ec2a585da8eb975082ae3f9812be52933ae59c6700390297f"
+    },
+    "tests/v4-readiness.test.js": {
+      "sha256": "e3d45e9ab0bf5c8343c3601e1153d5e5ae8e6e7de0ce1959c1179f058e157ea5"
+    },
+    "tests/v4-rng.test.js": {
+      "sha256": "603c77b1f2861c5452c7f1cd222648e3b97bee462e157228529c82957a5d9e4a"
+    },
+    "tests/v4-srs.test.js": {
+      "sha256": "965f0ca9f6f3392abfeb51416168ce2296035ad205e3a1a47c3edadba5be6108"
+    }
+  }
+}
