@@ -869,6 +869,107 @@ implementer choices, not marked in `V4-CONTRACTS.md`)
 - **Logs.** `oa:start`, `oa:quit`, `oa:finish`, `oa:saved` and `oa:generate-failed`, and none per
   question, so a fast arith game does not flood `amLogs_prep`. (§A5, §I)
 
+**M5: prep.html Market tab** (`prep-ui.js`, `prep.css`; implementer choices, not marked in
+`V4-CONTRACTS.md`)
+
+- **Layout.** Three cards. Setup: `select#mm-scenario`, a blurb and the rules (max width, the two
+  bots, the ±10 limit), `#mm-start`, and a line with the count and last P&L and edge of the stored
+  `mmRuns` games of that scenario. Settlement (`#mm-settlement`, shown after the last round, above
+  the game so it is seen without scrolling). Game: scenario and seed, `#mm-round`, the scenario
+  with its public `n` (and coin `batch`), `#mm-revealed`, position, cash and largest |position|,
+  the quote form, `#mm-error`, the fill messages and `table#mm-rounds`. (§J5, spec §6 UI)
+- **One game at a time, in memory only.** A game is `createGame(kind, pageSeed())` with no opts.
+  `#mm-start` always starts a new game; while one is unfinished it reads "New game" and discards
+  that game (logged as `mm:abandon`, nothing written). A reload discards it too: §I has no key for
+  an unfinished game. Leaving the tab and coming back keeps the game. "Play again" on the
+  settlement restarts the same scenario (with a URL `seed=`, the same game). (§I, §J1, §J5)
+- **Quote inputs.** Plain text inputs (`inputmode="decimal"`); their raw strings go to
+  `submitQuote`, so `validateQuote` alone decides what is a number. A rejected quote keeps the typed
+  values and shows the error; an accepted one clears the three inputs and focuses the fair value,
+  so each round's fair is typed fresh. Enter in any input submits once (a held Enter does not
+  repeat). A live line under the form shows the typed width and mid against the maximum; it never
+  blocks a submit. `#mm-error` is hidden only by an accepted quote or a new game, not by editing.
+  (§G3, §J5)
+- **Position-limit rejections are fills, not quote errors.** The quote is accepted and the round
+  advances (§G3 step 5), so they are not shown in `#mm-error`, which an accepted quote hides (§J5).
+  They show as `li.mm-fill[data-rejected="true"]` (struck through, "rejected, it would take you past
+  ±10") plus a one-round notice under the form saying how many trades were rejected.
+- **Fill messages.** One `li.mm-fill` per Fill of every round, in fill order, each with the round,
+  the bot, what it did, the price and the position after it. When the informed bot passes, an
+  `li.mm-pass` (not `.mm-fill`) says so, since a pass records no Fill. (§G3, §J5)
+- **Round table.** Per played round: fair, bid / ask, E[V] at quote time (`publicEV`, 2
+  decimals), fair error, the trades, the units the round revealed, and the position and cash after
+  the round (summed from the accepted fills). Past E[V] values are shown during the game, as
+  feedback on each fair value. (spec §6 UI)
+- **Settlement.** `data-*` attributes are `String(number)` of the `settle` metrics. The card shows
+  V with its units, P&L, edge, adverse, trades, largest |position| and mean fair error, the line
+  `P&L = cash + position × V`, `#mm-good-quoter` (exactly `goodQuoterLine`), one line each on what
+  edge, adverse and fair error mean, and the save status. Display numbers use a real minus sign
+  and at most 12 significant digits (EVs and fair errors 2 decimals); the attributes are exact.
+  (§G5, §J5)
+- **The saved entry.** `runEntry(state, Date.now())` at settlement, appended to a fresh read of
+  `mmRuns` on the page's one write chain. The settlement shows at once and its status line changes
+  from "Saving…" to saved (or not saved) when the write finishes. (§I, §J5)
+- **Logs.** `mm:start`, `mm:round` (one per accepted quote, at most 10 a game), `mm:quote-rejected`,
+  `mm:settle`, `mm:saved` and `mm:abandon`. (§A5, §I)
+
+**M6: prep/readiness.js (§H2-§H4, §H6-§H9)** (implementer choices, not marked in
+`V4-CONTRACTS.md`)
+
+- **Bad records.** List elements that are not objects are dropped from every list (`history`,
+  `lcSolves`, `practiceLog`, `oaRuns`, `mmRuns`, mistakes, list problems, material items). A score
+  field that is not a finite number (zetamac `amount`, oaRuns `score`, mmRuns `edge` / `trades`)
+  counts as 0, and its entry still takes its slot in the "last N" window. A non-finite `ts` sorts
+  as the oldest. Bank items without a string id are skipped when the bank is de-duplicated. (§H,
+  §H3)
+- **`nc150Progress`** matches string slugs only, and skips problems that are not objects, so
+  `total` counts the problem records. (§H2)
+- **Bad times throw** (§A4 programmer errors): `areaScoresAt` throws `TypeError` when `cutoffTs`
+  is not a number or is NaN, and `prepWeeklyLine` when `inputs.now` is not finite. `Infinity` is
+  allowed as a cutoff: it keeps every entry and verdict (cards are still replayed); `-Infinity`
+  drops them all. (§H3, §H8)
+- **Material.** A missing or non-finite `difficulty` sorts last, as in the §D6 queues; `n` is
+  applied as `slice(0, n)`. In `interviewMaterialBlock` a missing prompt or answer prints as empty
+  text. (§H6)
+- **`prepSummaryLine`.** A `dueToday` that is not a finite number prints `0`, a score that is not
+  a finite number prints `n/a`, and a `weakest` that is not an array prints `none`. (§H7)
+- **`prepWeeklyLine`.** A window entry whose bank item has an area outside the six is not counted
+  (`N` is the sum of the six counts), and the accuracy uses the same entries. (§H8)
+- **`amDrillEntry`.** Checks run in the order area, count, topics (format, then the 10-topic cap,
+  then bank membership), and each error names its keyword. `count` is `Number(args.count)` as the
+  contract says, so `" 7 "` reads as 7 and `true` as 1. (§H9)
+- **Drill helpers.** `drillAdvance` and `drillFinish` throw `TypeError` for a drill that is not an
+  object, and return a done drill as the same object. `drillAdvance` finishes the drill when
+  `done >= count`, and a missing `done` or `correct` counts as 0. `drillPromptLine` shows a finished
+  drill while `now − doneTs <= 48h` (a `doneTs` later than `now` included), and gives `""` with no
+  `doneTs`. (§H9)
+- **`weakestTopics`** uses only the contract's lower bound `ts > now − 30·DAY`, so a mistake
+  stamped after `now` still counts. (§H5)
+- **Dependencies.** `amMedianMediumSecs` (practice.js) and `amTodayKey` (shared.js) are resolved
+  at load time through `globalThis`, falling back to `require`, as §A5 shows. (§A5, §H3)
+
+**M6: side panel no-AI prompt** (`sidepanel.js`, `sidepanel.html`; implementer choices, not
+marked in `V4-CONTRACTS.md`)
+
+- **"Newest" means the largest `ts`.** Among the records a change adds whose `noAI` is unknown,
+  the prompt asks about the one with the largest `ts`; on a tie, the later one in the array. An
+  added record whose `noAI` is already known never prompts, even if it is the newest. (§J8)
+- **One question at a time.** A later change that adds an unknown solve replaces the prompt, and
+  the earlier solve stays unknown. A change that adds nothing keeps the prompt, unless its record
+  now has a known `noAI` (answered in another open panel) or is gone from `lcSolves`; then the
+  prompt hides. (§J8)
+- **The answer.** A click hides the prompt first (so a double click cannot write twice, and a
+  solve added during the write keeps its own prompt), re-reads `lcSolves`, and replaces only the
+  record whose `(slug, ts)` matches with a copy that has `noAI` set. If that record is gone, nothing
+  is written and `noai:missing` is logged. Logs: `noai:prompt`, `noai:set`, `noai:missing`,
+  `noai:set-failed`. (§I, §J8)
+- **Listener timing.** The prompt's `storage.onChanged` listener is registered first thing in the
+  panel's init, before its awaits, so a solve recorded while the panel is still loading prompts
+  too. The v3 listener is unchanged. (§J8)
+- **Look.** The prompt sits under the interview banner and reuses the `.plan-banner` and
+  `.log-actions` styles, so `styles.css` is unchanged. It shows the problem title (or the slug)
+  before `#noaiText`. (§J8)
+
 ## 2. Violations
 
 (none yet)
@@ -998,6 +1099,17 @@ implementer choices, not marked in `V4-CONTRACTS.md`)
   match nothing (the build warns "matches no item") and lets the duplicate back in, and new
   chunks get no dedup until the pass is run again. Same-puzzle items with different numbers are
   kept on purpose, so a learner can still meet a familiar puzzle twice with new parameters.
+- **M2 bank result (local build).** 1510 extracted practice items; a dedup pass removed 28
+  cross-source duplicates (kept the higher-priority source), leaving 1482 practice items and
+  432 cards (cpp 269, systems 163). 0 validator errors, 0 disputed, 102 corrected (13 practice,
+  88 cards from the card checker, 1 from the audit), largest source 20.9%, every numeric item
+  carries a method (707 blind+sim, 9 blind). Seven build-check and validator errors found at the
+  first assemble were fixed in the cache data, never in the validator.
+- **M2 QA audit (extra to spec §10).** A stratified sample of 174 items (about 10 per practice
+  source plus cpp and systems cards) was re-solved by two blind solvers per batch and adjudicated
+  against the source page. 1 item was corrected; no source crossed the 10% escalation threshold.
+  11 of the 58 blind-solver calls returned no answer (API errors), so those batches were
+  adjudicated against one blind solution instead of two.
 
 **Concurrent storage writes**
 
@@ -1184,3 +1296,36 @@ regexes and the §M4 steps as written)
 - **The arith config is not remembered.** Keeping it would need a new storage key, which §I does
   not list. So a custom game has to be set up again after a reload. The default game, which is
   the one the zetamac track logs, needs no setup.
+
+**M5: prep.html Market tab**
+
+- **`mmRuns` has no cap.** §I gives none, as for `oaRuns`. An entry is about 150 bytes, so
+  thousands of games take a few hundred KB under `unlimitedStorage`.
+- **An unfinished game is lost on reload.** Keeping it would need a storage key that §I does not
+  list. A game is at most 10 rounds, so little is lost, and only settled games count anyway.
+- **Past E[V] values are shown during the game.** They make the next E[V] easier to work out
+  (the user can update the last one by the reveal), but they give feedback on every fair value
+  while the reveal is fresh, which is the point of the drill. The live E[V] is never shown before
+  the user quotes.
+
+**M6: prep/readiness.js**
+
+- **Scores are recomputed from scratch on every call, with no cache.** `areaScores` walks each
+  list once and sorts its windows. `prepWeeklyLine` calls it twice and replays the whole history
+  once (at most 20000 entries, a few milliseconds). In exchange the module holds no state, and the
+  side panel always scores what is in storage at that moment (§H7 "Freshness").
+- **A corrupted score field reads as 0 rather than dropping its entry.** This keeps each "last N"
+  window literal (a bad record still takes its slot), at the cost that one corrupted game or run
+  pulls its area down until newer entries push it out of the window. The app's own writers
+  never store such fields.
+
+**M6: side panel no-AI prompt**
+
+- **The question lives only in the open panel.** It is not stored, so closing the panel, or a
+  newer solve replacing the prompt, leaves that solve unknown for good (spec §8: no answer leaves
+  `null`). A solve recorded while no panel is open never prompts. There is no way to answer
+  later, which keeps the prompt to a single storage-change rule. Unknown counts as not no-AI in
+  the coding score, so a missed question can only lower it.
+- **Every open panel prompts.** With panels open in two windows, both ask. The first answer hides
+  the other prompt through the storage change, so the record is written once in the usual case;
+  two clicks in the same instant would both write, and the last one wins.
