@@ -1,4 +1,4 @@
-// prep.html controller (V4-CONTRACTS §A5, §E6, §I, §J1, §J2, §J3, §J4, §J5, §J11). Not pure: it owns
+// prep.html controller (V4-CONTRACTS §A5, §E6, §I, §J1-§J7, §J11). Not pure: it owns
 // the DOM, reads the URL, fetches the bank and reads and writes chrome.storage.local. The whole
 // file is one IIFE so it adds no globals.
 //
@@ -8,8 +8,10 @@
 // writes per answer, Check my reasoning, keyboard shortcuts, the session summary) with the
 // item=, source= and mistake= parameters. M4: the OA tab (the four timed simulators, their
 // results, oaRuns and the in-app zetamac entry) with the seed= parameter. M5: the Market tab (the
-// seeded market-making game, its round table, fills and settlement, and the mmRuns write). Each
-// tab's content is rendered by RENDER[<tab id>]; Dashboard and Library (M6) fill in theirs later.
+// seeded market-making game, its round table, fills and settlement, and the mmRuns write). M6: the
+// Dashboard (area scores and their trend, NeetCode 150, the mistakes journal, checkpoint, under
+// 60, mock verdicts) and the Library (library/index.json, item counts, practice from a source).
+// Each tab's content is rendered by RENDER[<tab id>].
 // Every prep/*.js module is optional here (checked with typeof): a tab whose modules did not
 // load says so instead of rendering, and the page still reaches ready.
 (() => {
@@ -945,7 +947,7 @@
     panelEl.replaceChildren(h("p", { class: "panel-error", text: `This tab needs ${names.join(", ")}, which did not load.` }));
   }
 
-  // Tab renderers, awaited each time a tab is shown. Dashboard and Library (M6) are still empty.
+  // Tab renderers, awaited each time a tab is shown.
   const RENDER = {};
 
   // Today: the due count and the settings (§J3). The drill banner arrives with M7.
@@ -1486,8 +1488,9 @@
     oa.missedNone.hidden = !oa.missedNone.textContent;
   }
 
-  // The trend as a small SVG line, oldest to newest (spec §5 "trend sparkline").
-  function sparkline(points) {
+  // The trend as a small SVG line, oldest to newest (spec §5 "trend sparkline"). `range` = [lo, hi]
+  // fixes the vertical scale (the Dashboard's 0-100 scores); without it the points set it.
+  function sparkline(points, range) {
     const NS = "http://www.w3.org/2000/svg";
     const W = 160;
     const H = 32;
@@ -1499,8 +1502,8 @@
     svg.setAttribute("height", String(H));
     svg.setAttribute("aria-hidden", "true");
     if (!points.length) return svg;
-    const lo = Math.min(...points);
-    const hi = Math.max(...points);
+    const lo = range ? range[0] : Math.min(...points);
+    const hi = range ? range[1] : Math.max(...points);
     const x = k => (points.length === 1 ? W / 2 : P + (k * (W - 2 * P)) / (points.length - 1));
     const y = v => (hi === lo ? H / 2 : H - P - ((v - lo) * (H - 2 * P)) / (hi - lo));
     const line = document.createElementNS(NS, "polyline");
@@ -1873,6 +1876,388 @@
     });
   }
 
+  // ---------- links that stay on prep.html (§J1) ----------
+
+  // `prep.html?k=v&...` with each value encodeURIComponent'd, plus fixture=1 when this page has it,
+  // so a Library or Dashboard link opens the same bank.
+  function prepHref(pairs) {
+    const q = pairs.map(([k, v]) => `${k}=${encodeURIComponent(String(v))}`);
+    if (fixture) q.push("fixture=1");
+    return `prep.html?${q.join("&")}`;
+  }
+
+  // One line of plain text, at most n characters.
+  function excerpt(s, n) {
+    const t = String(s == null ? "" : s).replace(/\s+/g, " ").trim();
+    return t.length > n ? `${t.slice(0, n - 1).trimEnd()}…` : t;
+  }
+
+  // A thin horizontal bar for a share in [0, 1]; the number it shows is always printed next to it.
+  function meter(frac, title) {
+    const bar = h("span", { class: "meter-fill" });
+    bar.style.width = `${Math.round(Math.min(1, Math.max(0, frac)) * 1000) / 10}%`;
+    return h("span", { class: "meter", title, "aria-hidden": "true" }, bar);
+  }
+
+  const shortDay = ts => new Date(ts).toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" });
+
+  // ---------- Dashboard tab (spec §8 F6, §H2-§H5, §J6) ----------
+
+  // Rebuilt from a fresh read of storage every time the tab is shown (§I), and again after a
+  // change to one of those keys while the tab is shown. A render overtaken by a later one is
+  // dropped. Every number comes from PrepReadiness; this code only lays it out.
+  const DASH_KEYS = ["prepCards", "prepHistory", "prepMistakes", "lcSolves", "practiceLog", "oaRuns", "mmRuns", "state"];
+  const AREA_NAME = {
+    coding: "Coding", probability: "Probability", cpp: "C++", systems: "Systems",
+    mental: "Mental maths", oa: "OA", market: "Market making", mocks: "Mocks",
+  };
+  const AREA_HINT = {
+    coding: "NeetCode 150 solved, median timed Medium, no-AI share of the last 30 solves",
+    probability: "Mastery of the probability and brainteaser items, accuracy of the last 50 auto-checked answers",
+    cpp: "Mastery of the C++ cards, accuracy of the last 50 C++ answers",
+    systems: "Mastery of the systems cards, accuracy of the last 50 systems answers",
+    mental: "Mean of the last 5 Zetamac scores against 60",
+    oa: "Best of the last 5 runs of 80 in 8, sequences and EV against their targets",
+    market: "Edge per trade over the last 5 market games",
+    mocks: "Mean of the last 3 verdicts per mock mode, out of 10",
+  };
+  const MOCK_LABEL = { dsa: "DSA", quantdev: "Quant dev", cv: "Defend CV", trader: "Trader" };
+  const TREND_WEEKS = 8; // weekly points of the overall trend, the last one being now
+  const isScore = x => typeof x === "number" && Number.isFinite(x);
+
+  let dashToken = 0;
+  RENDER.dashboard = async panelEl => {
+    const miss = missingFor(["PrepBank", "PrepSrs", "PrepReadiness"]);
+    if (miss.length) return renderMissing(panelEl, miss);
+    const token = ++dashToken;
+    const st = await store.get(DASH_KEYS);
+    if (token !== dashToken) return;
+    let view;
+    try {
+      view = buildDashboard(st, Date.now());
+    } catch (e) {
+      const error = String((e && e.message) || e).slice(0, 200);
+      amLog("dashboard", "render-failed", { error });
+      view = h("p", { class: "panel-error", text: `The dashboard could not be computed from the stored data: ${error}` });
+    }
+    panelEl.replaceChildren(view);
+  };
+
+  // The areaScores inputs (§H3) from one storage read: a value of the wrong type reads as missing.
+  function dashInputs(st) {
+    const list = x => (Array.isArray(x) ? x : null);
+    const mem = isObj(st.state) && isObj(st.state.memory) ? st.state.memory : null;
+    return {
+      bank: items(),
+      cards: isObj(st.prepCards) ? st.prepCards : null,
+      history: list(st.prepHistory),
+      lcSolves: list(st.lcSolves),
+      nc150: data && isObj(data.nc150) ? data.nc150 : null,
+      practiceLog: list(st.practiceLog),
+      oaRuns: list(st.oaRuns),
+      mmRuns: list(st.mmRuns),
+      facts: mem && isObj(mem.facts) ? mem.facts : null,
+    };
+  }
+
+  function buildDashboard(st, now) {
+    const inputs = dashInputs(st);
+    const scores = R.areaScores(inputs);
+    // The trend: the same scores at weekly cut-offs (§H3 areaScoresAt, cards replayed from the
+    // history), oldest first; the last point is now, with the stored cards, like the Prep line.
+    const weekly = [];
+    for (let k = TREND_WEEKS - 1; k >= 1; k--) weekly.push(R.areaScoresAt(inputs, now - k * 7 * S.DAY));
+    weekly.push(scores);
+    const weekAgo = weekly[weekly.length - 2];
+    const wrap = h("div", { class: "dash" },
+      dashOverview(scores, weekly, now),
+      dashAreas(scores, weekAgo),
+      dashNc150(inputs),
+      dashMistakes(asList(st.prepMistakes)),
+      dashMocks(inputs.facts));
+    amLog("dashboard", "render", { overall: scores.overall, under60: R.under60(scores).length });
+    return wrap;
+  }
+
+  // The change of one score over the last 7 days, worded like the Sunday review (§H8).
+  function deltaText(cur, prev) {
+    if (!isScore(cur)) return "";
+    if (!isScore(prev)) return "new this week";
+    const d = cur - prev;
+    return d === 0 ? "no change in 7 days" : `${d > 0 ? "+" : "−"}${Math.abs(d)} in 7 days`;
+  }
+  function deltaEl(cur, prev) {
+    const text = deltaText(cur, prev);
+    const d = isScore(cur) && isScore(prev) ? cur - prev : 0;
+    return h("span", { class: `delta${d > 0 ? " is-up" : d < 0 ? " is-down" : ""}`, text, hidden: !text });
+  }
+
+  function scoreValue(score) {
+    return h("span", { class: `value${isScore(score) ? "" : " is-empty"}`, text: isScore(score) ? String(score) : "no data" });
+  }
+
+  // Overall (§H3), its trend, the next checkpoint and the areas under 60 (spec §8, §H4).
+  function dashOverview(scores, weekly, now) {
+    const overall = scores.overall;
+    const series = weekly.map(s => s.overall);
+    const firstData = series.findIndex(isScore);
+    const points = firstData < 0 ? [] : series.slice(firstData).map(v => (isScore(v) ? v : 0));
+    const cp = typeof amNextCheckpoint === "function" && typeof AM_CHECKPOINTS !== "undefined"
+      ? amNextCheckpoint(AM_CHECKPOINTS, new Date(now)) : null;
+    const low = R.under60(scores);
+    return h("section", { class: "card dash-overview" },
+      h("div", { class: "dash-headline" },
+        h("div", { id: "overall-score", class: "overall-score", "data-score": isScore(overall) ? String(overall) : "" },
+          h("span", { class: "overall-label", text: "Overall readiness" }),
+          scoreValue(overall),
+          deltaEl(overall, weekly[weekly.length - 2].overall)),
+        h("div", { class: "dash-trend" },
+          h("span", { class: "muted small", text: `Overall, weekly over the last ${TREND_WEEKS} weeks` }),
+          points.length > 1
+            ? h("span", { class: "oa-trend" }, sparkline(points, [0, 100]), h("span", { class: "small", text: points.join(", ") }))
+            : h("span", { class: "muted small", text: points.length ? "One week of data so far." : "No data yet." }))),
+      h("p", { class: "dash-note muted small", text: "The mean of the area scores that have data. Each area runs from 0 to 100; an area with no data at all shows no data and is left out." }),
+      h("p", { id: "checkpoint", class: "dash-line", text: cp ? `Next checkpoint: ${cp.due} (${cp.daysLeft} days left) — ${cp.label}` : "Next checkpoint: none" }),
+      h("p", { id: "under60", class: "dash-line", text: `Under 60: ${low.length ? low.join(", ") : "none"}` }));
+  }
+
+  function dashAreas(scores, weekAgo) {
+    return h("section", { class: "card" },
+      h("h2", { text: "Area scores" }),
+      h("div", { class: "area-grid" }, R.AREA_KEYS.map(k => {
+        const v = scores[k];
+        const low = isScore(v) && v < 60;
+        return h("div", { class: `area-score${low ? " is-low" : ""}${isScore(v) ? "" : " is-empty"}`, "data-area": k, "data-score": isScore(v) ? String(v) : "" },
+          h("div", { class: "area-head" },
+            h("span", { class: "area-name", text: AREA_NAME[k] || k }),
+            scoreValue(v),
+            low ? h("span", { class: "chip chip-low", text: "under 60" }) : null),
+          meter(isScore(v) ? v / 100 : 0, isScore(v) ? `${AREA_NAME[k] || k}: ${v} of 100` : "No data"),
+          deltaEl(v, weekAgo[k]),
+          h("p", { class: "area-hint muted small", text: AREA_HINT[k] || "" }));
+      })));
+  }
+
+  // nc150Progress (§H2): one bar per pattern, in list order, and the first unsolved problem.
+  function dashNc150(inputs) {
+    const list = inputs.nc150;
+    const p = R.nc150Progress(list, inputs.lcSolves);
+    const next = isObj(p.next) ? p.next : null;
+    const link = h("a", {
+      id: "nc150-next", href: next && typeof next.url === "string" ? next.url : null,
+      target: "_blank", rel: "noopener", text: next ? String(next.problem == null ? next.slug : next.problem) : "",
+    });
+    const nextLine = h("p", { class: "nc-next", hidden: !next },
+      "Next: ", link,
+      next && next.difficulty ? h("span", { class: "muted", text: ` · ${next.difficulty}` }) : null,
+      next && next.pattern != null ? h("span", { class: "muted", text: ` · ${next.pattern}` }) : null);
+    if (!next) link.hidden = true;
+    const summary = !list
+      ? "No NeetCode 150 list in this bank (lists/neetcode150.json)."
+      : p.total && p.solved === p.total
+        ? `All ${p.total} solved.`
+        : `${p.solved} of ${p.total} solved, matched to your LeetCode solves by slug.`;
+    return h("section", { class: "card" },
+      h("h2", { text: "NeetCode 150" }),
+      h("p", { class: "muted", text: summary }),
+      nextLine,
+      h("div", { class: "nc-patterns" }, Object.entries(p.byPattern).map(([pattern, g]) =>
+        h("div", { class: "nc-pattern", "data-pattern": pattern, "data-solved": String(g.solved), "data-total": String(g.total) },
+          h("span", { class: "nc-name", text: pattern }),
+          meter(g.total ? g.solved / g.total : 0, `${pattern}: ${g.solved} of ${g.total}`),
+          h("span", { class: "nc-count", text: `${g.solved}/${g.total}` })))));
+  }
+
+  // What the user answered, as shown in the journal: the chosen choice for an mcq index.
+  function mistakeAnswer(item, ans) {
+    const choices = item.type === "mcq" && item.answer && Array.isArray(item.answer.choices) ? item.answer.choices : null;
+    if (choices && Number.isInteger(ans) && ans >= 0 && ans < choices.length) return excerpt(choices[ans], 60);
+    if (typeof ans === "string") return ans.trim() ? excerpt(ans, 60) : "(blank)";
+    return ans == null ? "(blank)" : excerpt(String(ans), 60);
+  }
+
+  // mistakeTopics (§H5): recurring topics first. Every entry of a topic is a link that reopens its
+  // item with the note editor (§J1 item= + mistake=, §J2).
+  function dashMistakes(mistakes) {
+    const groups = R.mistakeTopics(mistakes, items());
+    const known = mistakes.filter(m => isObj(m) && typeof m.itemId === "string" && own(byId, m.itemId));
+    const unknown = mistakes.filter(isObj).length - known.length;
+    const itemCount = new Set(known.map(m => m.itemId)).size;
+    // Each item's prompt is rendered (markdown + KaTeX) once and cloned for its other entries;
+    // links inside it become plain text, since the whole entry is a link.
+    const prompts = new Map();
+    const promptOf = item => {
+      if (!prompts.has(item.id)) {
+        const el = rich("mistake-prompt", item.prompt);
+        for (const a of el.querySelectorAll("a")) a.replaceWith(...a.childNodes);
+        prompts.set(item.id, el);
+      }
+      return prompts.get(item.id).cloneNode(true);
+    };
+    const intro = known.length
+      ? `${known.length} mistake${known.length === 1 ? "" : "s"} on ${itemCount} item${itemCount === 1 ? "" : "s"}, grouped by topic with recurring topics first. A mistake counts under each topic of its item. Click one to open the item and add a note.`
+      : "No mistakes yet. Every wrong auto-checked answer and every Again grade lands here.";
+    return h("section", { class: "card" },
+      h("h2", { text: "Mistakes journal" }),
+      h("p", { class: "muted", text: intro }),
+      unknown ? h("p", { class: "muted small", text: `${unknown} more ${unknown === 1 ? "is" : "are"} for items no longer in this bank.` }) : null,
+      h("div", { class: "mistake-topics" }, groups.map(g =>
+        h("section", { class: "mistake-topic", "data-topic": g.topic, "data-count": String(g.count) },
+          h("h3", { class: "mistake-topic-head" },
+            h("span", { class: "mistake-topic-name", text: g.topic }),
+            h("span", { class: "chip", text: `${g.count} mistake${g.count === 1 ? "" : "s"}` }),
+            h("span", { class: "muted small", text: `${g.itemIds.length} item${g.itemIds.length === 1 ? "" : "s"} · last ${isScore(g.lastTs) ? shortDay(g.lastTs) : "?"}` })),
+          h("ul", { class: "mistake-list" }, g.entries.map(m => {
+            const item = byId[m.itemId];
+            const note = typeof m.note === "string" ? m.note.trim() : "";
+            return h("li", null,
+              h("a", {
+                class: "mistake-entry", "data-item-id": m.itemId, "data-ts": String(m.ts),
+                href: prepHref([["tab", "practice"], ["item", m.itemId], ["mistake", m.ts]]),
+                title: `${B.sourceLabel(item)} · open the item and its note`,
+              },
+                h("span", { class: "mistake-when muted", text: isScore(m.ts) ? shortDay(m.ts) : "?" }),
+                promptOf(item),
+                h("span", { class: "mistake-answer muted", text: `you: ${mistakeAnswer(item, m.answer)}` }),
+                note ? h("span", { class: "mistake-note", text: `Note: ${excerpt(note, 140)}` }) : null));
+          }))))));
+  }
+
+  // mockVerdicts (§H4): the parsed verdict scores per mode, oldest to newest.
+  function dashMocks(facts) {
+    const verdicts = R.mockVerdicts(facts);
+    const any = R.MOCK_MODES.some(m => verdicts[m].length);
+    return h("section", { class: "card" },
+      h("h2", { text: "Mock interviews" }),
+      h("p", { class: "muted", text: any
+        ? "Verdict scores the buddy saved at the end of each mock (N/10 read from the verdict), oldest to newest."
+        : "No verdicts yet. Finish a mock interview in the side panel and the buddy saves its verdict." }),
+      h("div", { class: "mock-modes" }, R.MOCK_MODES.map(m => {
+        const list = verdicts[m];
+        const last3 = list.slice(-3).map(v => v.score);
+        const mean = last3.length ? last3.reduce((a, b) => a + b, 0) / last3.length : null;
+        return h("div", { class: "mock-mode", "data-mode": m, "data-scores": list.map(v => v.score).join(",") },
+          h("div", { class: "mock-head" },
+            h("span", { class: "mock-name", text: MOCK_LABEL[m] || m }),
+            h("span", { class: "muted small", text: mean === null ? "no verdicts" : `last ${last3.length}: ${Math.round(mean * 10) / 10} / 10` })),
+          list.length
+            ? h("ul", { class: "mock-scores" }, list.map(v => h("li", { class: "chip", title: v.day, text: `${v.score} · ${v.day}` })))
+            : null);
+      })));
+  }
+
+  // While the Dashboard is shown, a change to a key it reads re-renders it (debounced). For
+  // `state`, only a change to the saved facts (the mock verdicts) counts.
+  let dashTimer = null;
+  function factsOf(state) {
+    return isObj(state) && isObj(state.memory) ? JSON.stringify(state.memory.facts || null) : "null";
+  }
+  function onDashStorage(changes, area) {
+    if (area !== "local" || activeTab !== "dashboard") return;
+    const hit = Object.keys(changes).some(k => DASH_KEYS.includes(k) &&
+      (k !== "state" || factsOf(changes.state.oldValue) !== factsOf(changes.state.newValue)));
+    if (!hit) return;
+    clearTimeout(dashTimer);
+    dashTimer = setTimeout(() => {
+      if (activeTab === "dashboard") RENDER.dashboard(panel("dashboard"));
+    }, 300);
+  }
+
+  // ---------- Library tab (spec §8 F6, §E1, §E5, §J7) ----------
+
+  // library/index.json grouped by category folder, in index order. Each entry opens its PDF in
+  // Chrome's viewer, shows how many bank items cite it (sourceCounts; a file no item cites shows
+  // 0) and starts a Practice session of those items (§J1 source=). Built once: it reads no storage.
+  let libMounted = false;
+  RENDER.library = async panelEl => {
+    const miss = missingFor(["PrepBank"]);
+    if (miss.length) return renderMissing(panelEl, miss);
+    if (libMounted) return;
+    libMounted = true;
+    panelEl.replaceChildren(buildLibrary());
+  };
+
+  // §J7: the entry's file under the loaded bank root, with no page fragment.
+  const libFileHref = file => `${data.root}library/${encodeURI(file)}`;
+
+  function buildLibrary() {
+    const lib = data && data.library;
+    const cats = isObj(lib) && Array.isArray(lib.categories) ? lib.categories.filter(isObj) : null;
+    if (!cats) {
+      amLog("library", "missing", { root: data && data.root });
+      return h("section", { class: "card" },
+        h("h2", { text: "Library" }),
+        h("p", { text: "This bank has no library index (library/index.json). Run npm run bank:build to copy the PDFs and index them." }));
+    }
+    const counts = B.sourceCounts(items());
+    const countOf = file => (own(counts, file) && isScore(counts[file]) ? counts[file] : 0);
+    const rows = [];
+    const sections = cats.map(c => {
+      const entries = asList(c.entries).filter(e => isObj(e) && typeof e.file === "string" && e.file);
+      const catRows = entries.map(e => {
+        const n = countOf(e.file);
+        const title = typeof e.title === "string" && e.title.trim() ? e.title.trim() : e.file;
+        const li = h("li", { class: "lib-entry", "data-file": e.file },
+          h("div", { class: "lib-main" },
+            h("a", { class: "lib-open", href: libFileHref(e.file), target: "_blank", rel: "noopener", title: "Open the PDF in Chrome's viewer", text: title }),
+            title !== e.file ? h("span", { class: "lib-file muted small", text: e.file }) : null),
+          h("span", { class: `lib-items${n ? "" : " muted"}` },
+            h("span", { class: "lib-count", text: String(n) }), n === 1 ? " item" : " items"),
+          h("button", {
+            type: "button", class: `btn lib-practice${n ? "" : " btn-quiet"}`, text: "Practise",
+            title: n ? `A session of the ${n} item${n === 1 ? "" : "s"} from this source` : "No bank item cites this file yet",
+            onclick: () => {
+              amLog("library", "practice", { file: e.file, items: n });
+              location.href = prepHref([["tab", "practice"], ["source", e.file]]);
+            },
+          }));
+        const row = { li, n, text: `${title}\n${e.file}`.toLowerCase() };
+        rows.push(row);
+        return row;
+      });
+      const label = typeof c.label === "string" && c.label ? c.label : String(c.folder == null ? "" : c.folder);
+      const head = h("h3", { class: "lib-category-head" },
+        h("span", { text: label }),
+        h("span", { class: "muted small", text: `${entries.length} file${entries.length === 1 ? "" : "s"}` }));
+      const empty = h("p", { class: "muted small", text: entries.length ? "No file matches the filter." : "No files.", hidden: !!entries.length });
+      const sec = h("section", { class: "lib-category", "data-folder": typeof c.folder === "string" ? c.folder : "" },
+        head, h("ul", { class: "lib-entries" }, catRows.map(r => r.li)), empty);
+      return { sec, catRows, empty };
+    });
+
+    const cited = rows.filter(r => r.n > 0).length;
+    const filter = h("input", { id: "lib-filter", type: "search", placeholder: "Filter by title or file", "aria-label": "Filter the library" });
+    const citedOnly = h("input", { id: "lib-cited", type: "checkbox" });
+    const status = h("span", { class: "muted small", role: "status" });
+    const apply = () => {
+      const q = filter.value.trim().toLowerCase();
+      let shown = 0;
+      for (const s of sections) {
+        let here = 0;
+        for (const r of s.catRows) {
+          const on = (!q || r.text.includes(q)) && (!citedOnly.checked || r.n > 0);
+          r.li.hidden = !on;
+          if (on) here += 1;
+        }
+        shown += here;
+        if (s.catRows.length) s.empty.hidden = here > 0;
+      }
+      status.textContent = shown === rows.length ? "" : `Showing ${shown} of ${rows.length}.`;
+    };
+    filter.addEventListener("input", apply);
+    citedOnly.addEventListener("change", apply);
+    amLog("library", "render", { categories: sections.length, files: rows.length, cited });
+    return h("div", { class: "library" },
+      h("section", { class: "card" },
+        h("h2", { text: "Library" }),
+        h("p", { class: "muted", text: `${rows.length} file${rows.length === 1 ? "" : "s"} in ${sections.length} categor${sections.length === 1 ? "y" : "ies"}; bank items cite ${cited} of them. A title opens the PDF in Chrome's viewer; Practise runs a session of every item from that source.` }),
+        h("div", { class: "toolbar lib-toolbar" },
+          filter,
+          h("label", { class: "check" }, citedOnly, " Only sources with items"),
+          status)),
+      sections.map(s => s.sec));
+  }
+
   async function showTab(id) {
     if (!TAB_IDS.includes(id)) id = DEFAULT_TAB;
     activeTab = id;
@@ -1942,6 +2327,7 @@
       else if (URL_SOURCE !== null) pendingPractice = sourceSpec(URL_SOURCE);
       amLog("prep", "params", { item: URL_ITEM, source: URL_SOURCE, mistake: URL_MISTAKE_TS, seed: URL_SEED });
       wireTabs();
+      chrome.storage.onChanged.addListener(onDashStorage);
       $("#tabs").hidden = false;
       await showTab(initialTab());
     } else {

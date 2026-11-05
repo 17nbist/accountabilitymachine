@@ -192,6 +192,7 @@ a:focus-visible {
 
 input[type="text"],
 input[type="number"],
+input[type="search"],
 select,
 textarea {
   padding: 7px 10px;
@@ -984,4 +985,334 @@ input.mm-input {
 .mm-explain {
   margin: 12px 0 0;
   padding-left: 18px;
+}
+
+/* ---------- Dashboard tab (spec §8 F6, §J6) ---------- */
+
+/* One accent hue for every bar and line (magnitude only); "under 60" is a labelled chip, never
+   colour alone. */
+
+.dash-headline {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.overall-score {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.overall-label {
+  color: #8a93a8;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.overall-score .value {
+  font-size: 40px;
+  font-weight: 700;
+  line-height: 1.1;
+  font-variant-numeric: tabular-nums;
+}
+
+.dash-trend {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 4px;
+}
+
+.dash-note {
+  margin: 10px 0 0;
+}
+
+.dash-line {
+  margin: 8px 0 0;
+}
+
+.value.is-empty {
+  color: #8a93a8;
+  font-weight: 600;
+}
+
+.overall-score .value.is-empty {
+  font-size: 22px;
+}
+
+.delta {
+  color: #aab6d9;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+.area-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 10px;
+}
+
+.area-score {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px 12px;
+  background: #1c2030;
+  border: 1px solid #2b3145;
+  border-radius: 10px;
+}
+
+.area-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.area-name {
+  font-weight: 700;
+}
+
+.area-score .value {
+  margin-left: auto;
+  font-size: 20px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.area-score .value.is-empty {
+  font-size: 13px;
+}
+
+.chip-low {
+  white-space: nowrap;
+  border-color: #6b5326;
+  color: #f3d9a8;
+}
+
+.area-hint {
+  margin: 0;
+}
+
+.meter {
+  display: block;
+  height: 6px;
+  overflow: hidden;
+  background: #0f1117;
+  border-radius: 4px;
+}
+
+.meter-fill {
+  display: block;
+  height: 100%;
+  background: #8fb0ff;
+  border-radius: 4px;
+}
+
+.nc-next {
+  margin: 6px 0 12px;
+}
+
+.nc-patterns {
+  display: grid;
+  gap: 6px;
+}
+
+.nc-pattern {
+  display: grid;
+  grid-template-columns: minmax(140px, 220px) 1fr 52px;
+  align-items: center;
+  gap: 12px;
+}
+
+.nc-count {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.mistake-topics {
+  display: grid;
+  gap: 12px;
+}
+
+.mistake-topic-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 8px;
+  margin: 0 0 4px;
+  font-size: 14px;
+}
+
+.mistake-topic-name {
+  font-weight: 700;
+}
+
+.mistake-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  border-left: 2px solid #2b3145;
+}
+
+.mistake-entry {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px 10px;
+  padding: 5px 10px;
+  color: #e2e5ec;
+  text-decoration: none;
+  border-radius: 0 6px 6px 0;
+}
+
+.mistake-entry:hover {
+  background: #1c2030;
+}
+
+.mistake-when {
+  min-width: 92px;
+  font-size: 12px;
+}
+
+/* The rendered prompt, flattened into one run of text and clamped to two lines. */
+.mistake-prompt {
+  display: -webkit-box;
+  flex: 1 1 320px;
+  min-width: 0;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.mistake-prompt > *,
+.mistake-prompt .katex-display,
+.mistake-prompt pre {
+  display: inline;
+  margin: 0;
+  padding: 0;
+}
+
+.mistake-prompt > * + *::before {
+  content: " ";
+}
+
+.mistake-answer {
+  font-size: 12px;
+}
+
+.mistake-note {
+  flex-basis: 100%;
+  padding-left: 102px;
+  color: #aab6d9;
+  font-size: 12px;
+  font-style: italic;
+}
+
+.mock-modes {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 10px;
+}
+
+.mock-mode {
+  padding: 10px 12px;
+  background: #1c2030;
+  border: 1px solid #2b3145;
+  border-radius: 10px;
+}
+
+.mock-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.mock-name {
+  font-weight: 700;
+}
+
+.mock-scores {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin: 8px 0 0;
+  padding: 0;
+  list-style: none;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---------- Library tab (spec §8 F6, §J7) ---------- */
+
+.lib-toolbar {
+  margin: 10px 0 0;
+}
+
+#lib-filter {
+  min-width: 260px;
+}
+
+.lib-category {
+  margin-bottom: 16px;
+}
+
+.lib-category-head {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  margin: 0 0 6px;
+  font-size: 15px;
+}
+
+.lib-entries {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  background: #161a24;
+  border: 1px solid #2b3145;
+  border-radius: 12px;
+}
+
+.lib-entries:empty {
+  display: none;
+}
+
+.lib-entry {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 8px 14px;
+}
+
+.lib-entry + .lib-entry {
+  border-top: 1px solid #2b3145;
+}
+
+.lib-main {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.lib-file {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.lib-items {
+  min-width: 70px;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.lib-practice {
+  padding: 4px 12px;
 }

@@ -970,6 +970,72 @@ marked in `V4-CONTRACTS.md`)
   `.log-actions` styles, so `styles.css` is unchanged. It shows the problem title (or the slug)
   before `#noaiText`. (§J8)
 
+**M7: opening Prep** (`background.js` `prepOpenTab`, `content-distraction.js`; implementer
+choices, not marked in `V4-CONTRACTS.md`)
+
+- **One request at a time.** `AM_OPEN_PREP` requests go through one promise chain in the
+  background, so a double click (or the panel and the overlay at once) cannot both query before
+  the first `tabs.create` lands: the first opens the tab, the rest focus it. (§J10)
+- **What counts as the Prep tab.** A tab whose `url` OR `pendingUrl` starts with
+  `chrome.runtime.getURL("prep.html")`, because a tab that is still loading reports its target only
+  in `pendingUrl`. So a `prep.html?fixture=1` tab opened by hand is reused too. With several, the
+  first in `chrome.tabs.query({})` order is focused. (§J10)
+- **Failure.** If a tabs or windows call throws, the background logs `prep:open-failed` and answers
+  `{ ok: false, error }`; `prep:open` is logged only after a successful open or focus. The overlay
+  logs `distraction:open-prep-failed` when the message fails or the answer is not `ok`. (§J9,
+  §J10)
+- **Overlay button.** The LeetCode button gets the class `leetcode` and its lookup becomes
+  `.go.leetcode`, as §J9 allows. `.go.prep` has its own colour. An orphaned content script (after
+  an extension reload) disarms on click instead of messaging a dead context, as `evaluate` does.
+  (§J9)
+
+**M6: prep.html Dashboard and Library** (`prep-ui.js`, `prep.css`; implementer choices, not
+marked in `V4-CONTRACTS.md`)
+
+- **Freshness.** The Dashboard re-reads its keys (`prepCards`, `prepHistory`, `prepMistakes`,
+  `lcSolves`, `practiceLog`, `oaRuns`, `mmRuns`, `state`) every time it is shown (§I). While it is
+  the active tab, a `storage.onChanged` event for one of those keys re-renders it after 300 ms
+  (debounced); for `state`, only a change to `memory.facts` counts. A render overtaken by a later
+  one is dropped. A value of the wrong type (e.g. a non-array `prepHistory`) is passed to
+  `areaScores` as missing. (§H3, §I)
+- **Trend.** Each area shows its change over 7 days, `areaScores` now against
+  `areaScoresAt(inputs, now − 7·DAY)`, worded as `+n` / `−n` / `no change in 7 days`, or
+  `new this week` when the earlier score is `null` (the §H8 rule). Overall also gets a sparkline
+  of the weekly overall scores over the last 8 weeks (cut-offs `now − k·7·DAY`, k = 7…1, then now)
+  on a fixed 0–100 scale, starting at the first week with data, with the values printed beside it.
+  (§H3, §H8)
+- **Area tiles.** `.value` holds only the integer or `no data`; the label, a 0–100 bar, the trend
+  and a one-line description of the formula sit outside it. A score under 60 also gets an
+  `under 60` chip, so it is never shown by colour alone. `#overall-score` has a `.value` child too.
+  (§J6)
+- **NeetCode 150.** The line `Next: <a#nc150-next> · difficulty · pattern` hides with the link when
+  `next` is `null` (all solved, or no list). The link opens LeetCode in a new tab; its text is
+  `next.problem` (the slug if `problem` is missing). With no list the card says so. (§H2, §J6)
+- **Mistakes journal.** Every entry of every topic is rendered (none capped), each an `<a>` that
+  navigates the same tab to `prep.html?tab=practice&item=<id>&mistake=<ts>` (values through
+  `encodeURIComponent`, `fixture=1` appended last). An entry shows the local date, the item's
+  prompt (markdown + KaTeX, rendered once per item and cloned, clamped to two lines, links inside
+  it unwrapped), what the user answered (an mcq index shows its choice text) and the note, if any.
+  Mistakes for items not in the bank are not listed; a line counts them. (§H5, §J1, §J6)
+- **Mocks.** All four modes are rendered; a mode with no verdicts has `data-scores=""` and says
+  `no verdicts`. Each mode shows its scores with their days and the mean of the last 3 (1
+  decimal). (§H4, §J6)
+- **Library links.** `a.lib-open` is `${root}library/${encodeURI(file)}` with no `#page=`
+  fragment, as §J7 states (`libraryHref` needs an item's page, so it stays on the Practice source
+  line). It opens in a new tab. An entry's text is its `title` (the file name when there is none),
+  with the file name below it. Entries without a string `file` are skipped; a category with no
+  entries is still listed, with "No files.". (§E5, §J7)
+- **Practise at count 0.** `button.lib-practice` stays enabled for a file no item cites (only
+  styled quieter), because §J7 says it navigates; it opens the Practice tab's empty screen, which
+  names the file. (§J1, §J7)
+- **Library filter.** A text filter (title or file, case-insensitive) and an "Only sources with
+  items" checkbox hide entries with the `hidden` attribute; every `.lib-entry` stays in the DOM.
+  The Library is built once per page load (it reads no storage keys). (§J7)
+- **Render errors.** If computing the Dashboard throws, the tab shows the error and logs
+  `dashboard:render-failed`, so the page still reaches `data-ready`. Other logs:
+  `dashboard:render`, `library:render`, `library:missing` (no `library/index.json`) and
+  `library:practice`. (§A5, §J1)
+
 ## 2. Violations
 
 (none yet)
@@ -1329,3 +1395,27 @@ regexes and the §M4 steps as written)
 - **Every open panel prompts.** With panels open in two windows, both ask. The first answer hides
   the other prompt through the storage change, so the record is written once in the usual case;
   two clicks in the same instant would both write, and the last one wins.
+
+**M6: prep.html Dashboard and Library**
+
+- **The trend replays the history seven times per render.** Each weekly point is an
+  `areaScoresAt`, which replays `prepHistory` into cards. At the 20000-entry cap that is some tens
+  of milliseconds per render (and per debounced storage change while the tab is shown). In
+  exchange the trend needs no stored snapshots and agrees with the Sunday review's deltas.
+- **A long mistakes journal is a long page.** §J6 renders every entry of every topic, and a
+  mistake appears under each topic of its item, so 5000 mistakes on items with three topics are
+  15000 rows. Rows are plain DOM and each prompt is rendered once per item and cloned, so this
+  stays usable, but there is no paging or collapsing.
+- **The Library is built once per page.** A `bank:build` while prep.html is open shows up after a
+  reload, like every other bank change.
+- **Library PDFs open with no page.** §J7 links each file without `#page=`, so the viewer opens
+  at page 1. The page-accurate link is the source line of each Practice item (`libraryHref`).
+
+**M7: opening Prep**
+
+- **The distraction tab keeps its overlay after "Take me to Prep".** Unlike the LeetCode and
+  Zetamac buttons, which navigate the tab away, Prep opens (or focuses) a separate extension tab,
+  so the distraction site stays behind the overlay until the day is done or the user snoozes. The
+  user lands in Prep either way, and nothing about the distraction site is unblocked.
+- **A hand-opened `prep.html?fixture=1` tab is reused.** The match is a URL prefix, as §J10 says,
+  so 📚 can focus a fixture tab instead of opening the real bank. Only a developer opens that URL.

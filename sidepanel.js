@@ -185,7 +185,8 @@ const els = {};
  "streakBadge", "streakGrid", "chatWindow", "userInput", "sendBtn", "syncBtn",
  "memoryView", "clearMemoryBtn", "logsSection", "logView", "refreshLogsBtn",
  "copyLogsBtn", "clearLogsBtn", "nudgeEnabled", "nudgeHour", "interviewBtn",
- "interviewBanner", "pullBtn", "interviewMode", "resetPlanBtn"]
+ "interviewBanner", "pullBtn", "interviewMode", "resetPlanBtn",
+ "noaiPrompt", "noaiTitle", "noaiYes", "noaiNo"]
   .forEach(id => els[id] = document.getElementById(id));
 
 let state = {
@@ -1227,6 +1228,79 @@ async function maybeDailyCheckin() {
   }
 }
 
+// ---------- No-AI prompt (v4) ----------
+// When a new LeetCode solve lands in storage while the panel is open, ask whether it was
+// solved without AI. The answer goes on exactly that (slug, ts) record. With no answer the
+// field stays absent, which means unknown (spec §8); the panel never writes null.
+
+let noAIPending = null; // { slug, ts } of the solve the prompt is asking about
+
+function noAIKey(s) {
+  return JSON.stringify([s.slug, s.ts]);
+}
+
+// The newest record of `next` whose (slug, ts) is not in `prev` and whose noAI is unknown.
+function noAIAddedSolve(prev, next) {
+  const before = new Set((Array.isArray(prev) ? prev : []).filter(Boolean).map(noAIKey));
+  let pick = null;
+  for (const s of Array.isArray(next) ? next : []) {
+    if (!s || s.noAI != null || before.has(noAIKey(s))) continue;
+    if (!pick || s.ts >= pick.ts) pick = s;
+  }
+  return pick;
+}
+
+function noAIShow(solve) {
+  noAIPending = { slug: solve.slug, ts: solve.ts };
+  els.noaiPrompt.dataset.slug = String(solve.slug ?? "");
+  els.noaiTitle.textContent = `${solve.title || solve.slug}:`;
+  els.noaiPrompt.hidden = false;
+  amLog("noai", "prompt", { slug: solve.slug });
+}
+
+function noAIHide() {
+  noAIPending = null;
+  els.noaiPrompt.hidden = true;
+}
+
+function noAIOnChanged(changes, area) {
+  if (area !== "local" || !changes.lcSolves) return;
+  const { oldValue, newValue } = changes.lcSolves;
+  const added = noAIAddedSolve(oldValue, newValue);
+  if (added) {
+    noAIShow(added);
+  } else if (noAIPending) {
+    // Answered in another panel, or the record is gone: the question no longer applies.
+    const key = noAIKey(noAIPending);
+    const rec = (Array.isArray(newValue) ? newValue : []).find(s => s && noAIKey(s) === key);
+    if (!rec || rec.noAI != null) noAIHide();
+  }
+}
+
+async function noAIAnswer(noAI) {
+  const target = noAIPending;
+  if (!target) return;
+  // Hide first: a double click cannot write twice, and a solve added during the write
+  // keeps its own prompt.
+  noAIHide();
+  try {
+    // Re-read right before writing: content-lc.js may have appended a solve since the prompt.
+    const { lcSolves: stored } = await chrome.storage.local.get("lcSolves");
+    const solves = Array.isArray(stored) ? stored.slice() : [];
+    const key = noAIKey(target);
+    const i = solves.findIndex(s => s && noAIKey(s) === key);
+    if (i < 0) {
+      amLog("noai", "missing", { slug: target.slug, ts: target.ts });
+      return;
+    }
+    solves[i] = { ...solves[i], noAI };
+    await chrome.storage.local.set({ lcSolves: solves });
+    amLog("noai", "set", { slug: target.slug, noAI });
+  } catch (e) {
+    amLog("noai", "set-failed", { slug: target.slug, error: String(e.message).slice(0, 200) });
+  }
+}
+
 // ---------- Logs viewer ----------
 
 const LOG_KEYS = ["amLogs_panel", "amLogs_content", "amLogs_bg"];
@@ -1254,6 +1328,10 @@ async function renderLogs() {
 
 document.addEventListener("DOMContentLoaded", async () => {
   amLogInit("panel");
+  // Before the awaits below, so a solve recorded while the panel is still loading prompts too.
+  chrome.storage.onChanged.addListener(noAIOnChanged);
+  els.noaiYes.addEventListener("click", () => noAIAnswer(true));
+  els.noaiNo.addEventListener("click", () => noAIAnswer(false));
   const stored = await chrome.storage.local.get(["state", "lcStats", "lcSolves", "lcProblemContext", "practiceLog"]);
   if (stored.state) {
     state = { ...state, ...stored.state };
